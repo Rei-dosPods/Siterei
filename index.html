@@ -49,7 +49,10 @@
         <header>
             <div class="header-container">
                 <div>
-                    <h1>REI DOS PODS</h1>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <h1>REI DOS PODS</h1>
+                        <div id="store-status-badge" class="status-badge-premium loading">Sincronizando...</div>
+                    </div>
                     <p class="subtitle">E-commerce de Alta Performance</p>
                 </div>
                 <div class="user-badge-header">
@@ -93,7 +96,7 @@
             <div class="products-grid" id="products-container-client"></div>
         </section>
 
-        <!-- SEÇÃO 2: HISTÓRICO DO CLIENTE (UBER STYLE PROGRESS) -->
+        <!-- SEÇÃO 2: HISTÓRICO DO CLIENTE -->
         <section id="view-historico" class="view-section">
             <h2 class="section-title-premium">📍 Rastreamento de Ordens</h2>
             <div class="orders-list" id="client-orders-container"></div>
@@ -101,7 +104,14 @@
 
         <!-- SEÇÃO 3: PAINEL DE ORDENS (ADM CONTROL) -->
         <section id="view-admin" class="view-section">
-            <h2 class="section-title-premium">Fluxo de Logística Ativa</h2>
+            <!-- 🎛️ PAINEL DE CONTROLE DE EXPEDIENTE DO ADM -->
+            <div class="adm-control-card-premium">
+                <h3 style="font-size: 15px; letter-spacing: 0.5px;">🎛️ CONTROLE DE EXPEDIENTE ATIVO</h3>
+                <p style="color: var(--text-muted); font-size: 12px; margin: 4px 0 15px 0;">Altere a disponibilidade da loja em tempo real para os clientes.</p>
+                <button type="button" id="btn-toggle-store" class="buy-btn-premium" onclick="toggleStoreStatus()" style="padding: 14px;">Alterando Estado...</button>
+            </div>
+
+            <h2 class="section-title-premium" style="margin-top: 25px;">Fluxo de Logística Ativa</h2>
             <div class="orders-list" id="orders-container"></div>
         </section>
 
@@ -186,6 +196,12 @@
     <div class="modal" id="buy-modal">
         <div class="modal-content premium-popup">
             <h3>Configurar Entrega</h3>
+            
+            <!-- ⚠️ BANNER DE AVISO DE LOJA FECHADA DINÂMICO -->
+            <div id="checkout-closed-warning" class="checkout-closed-alert-box" style="display: none;">
+                🌙 *Aviso:* No momento estamos fechados. Seu pedido ficará reservado e será confirmado na hora da abertura da loja!
+            </div>
+
             <form id="order-form" onsubmit="return false;">
                 <input type="hidden" id="modal-product-id">
                 

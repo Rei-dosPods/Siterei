@@ -13,6 +13,9 @@ let globalProductsCache = [];
 let currentCategoryFilter = "all";
 const TAXA_FRETE = 10.00;
 
+// Variável Global de Status de Expediente
+let isStoreOpenGlobal = true;
+
 // Variáveis de controle para o Hold Trigger
 let holdTimer = null;
 let holdProgress = 0;
@@ -154,13 +157,12 @@ function logUserIn(user) {
     document.getElementById('main-content').style.display = 'block';
     document.getElementById('user-display-name').innerText = user.name;
     switchView('loja');
+    fetchStoreStatusInitial(); 
     setupRealtimeListeners(); 
 }
 
 function handleLogout() {
-    if (realtimeChannel) {
-        supabaseClient.removeChannel(realtimeChannel);
-    }
+    if (realtimeChannel) { supabaseClient.removeChannel(realtimeChannel); }
     sessionStorage.removeItem('logged_user');
     currentUser = null;
     document.getElementById('main-content').style.display = 'none';
@@ -169,17 +171,51 @@ function handleLogout() {
     setAuthMode('login');
 }
 
+function syncStoreStatusInterface(isOpen) {
+    isStoreOpenGlobal = isOpen;
+    const badge = document.getElementById('store-status-badge');
+    const btnToggle = document.getElementById('btn-toggle-store');
+
+    if(badge) {
+        if(isOpen) {
+            badge.innerText = "Aberto";
+            badge.className = "status-badge-premium aberto";
+        } else {
+            badge.innerText = "Fechado";
+            badge.className = "status-badge-premium fechado";
+        }
+    }
+
+    if(btnToggle && currentUser && currentUser.role === 'admin') {
+        if(isOpen) {
+            btnToggle.innerText = "Fechar Loja (Mudar para Noite)";
+            btnToggle.style.background = "var(--danger)";
+        } else {
+            btnToggle.innerText = "Abrir Loja (Mudar para Dia)";
+            btnToggle.style.background = "var(--success)";
+        }
+    }
+}
+
+async function fetchStoreStatusInitial() {
+    const { data } = await supabaseClient.from('store_status').select('is_open').eq('id', 1).single();
+    if(data) { syncStoreStatusInterface(data.is_open); }
+}
+
+async function toggleStoreStatus() {
+    if(!currentUser || currentUser.role !== 'admin') return;
+    const novoEstado = !isStoreOpenGlobal;
+    await supabaseClient.from('store_status').update({ is_open: novoEstado }).eq('id', 1);
+    showPremiumNotification("Status Alterado", `A loja agora consta como ${novoEstado ? 'ABERTA' : 'FECHADA'} para todos.`, "success");
+}
+
 function setupRealtimeListeners() {
     if (!supabaseClient) return;
 
-    if (realtimeChannel) {
-        supabaseClient.removeChannel(realtimeChannel);
-    }
+    if (realtimeChannel) { supabaseClient.removeChannel(realtimeChannel); }
 
     realtimeChannel = supabaseClient.channel('custom-all-channel')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pods_orders' }, (payload) => {
-        console.log('Alteração detectada em ordens:', payload);
-        
         const activeSection = document.querySelector('.view-section.active');
         if (!activeSection) return;
 
@@ -192,15 +228,18 @@ function setupRealtimeListeners() {
         }
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pods_products' }, (payload) => {
-        console.log('Alteração detectada em catálogo/estoque:', payload);
         fetchAndRenderStore(); 
         if (currentUser.role === 'admin' && document.querySelector('#view-gerenciar.active')) {
             renderAdminInventoryManager();
         }
     })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'store_status' }, (payload) => {
+        syncStoreStatusInterface(payload.new.is_open);
+    })
     .subscribe();
 }
 
+// 🛠️ FUNÇÃO TOTALMENTE CORRIGIDA SEM O UNDERLINE QUE FAZIA A TELA TRAVAR
 function switchView(view) {
     if((view === 'admin' || view === 'gerenciar' || view === 'clientes') && (!currentUser || currentUser.role !== 'admin')) {
         handleLogout();
@@ -216,17 +255,23 @@ function switchView(view) {
 
     if(currentUser.role === 'admin') {
         adminNav.style.display = 'flex'; clientNav.style.display = 'none';
-        if(view === 'loja') document.getElementById('tab-adm-loja-btn').classList.add('active');
+        if(view === 'loja') {
+            const btnLojaAdm = document.getElementById('tab-adm-loja-btn');
+            if(btnLojaAdm) btnLojaAdm.classList.add('active');
+        }
     } else {
         adminNav.style.display = 'none'; clientNav.style.display = 'flex';
-        if(view === 'loja') document.getElementById('tab-loja-btn').classList.add('active');
+        if(view === 'loja') {
+            const btnLojaCli = document.getElementById('tab-loja-btn');
+            if(btnLojaCli) btnLojaCli.classList.add('active');
+        }
     }
 
     if(view === 'loja') { document.getElementById('view-loja').classList.add('active'); fetchAndRenderStore(); }
-    else if (view === 'historico') { document.getElementById('tab-historico-btn').classList.add('active'); document.getElementById('view-historico').classList.add('active'); renderClientHistory(); }
-    else if (view === 'admin') { document.getElementById('tab-admin-btn').classList.add('active'); document.getElementById('view-admin').classList.add('active'); renderAdminOrders(); }
-    else if (view === 'gerenciar') { document.getElementById('tab-gerenciar-btn').classList.add('active'); document.getElementById('view-gerenciar').classList.add('active'); renderAdminInventoryManager(); }
-    else if (view === 'clientes') { document.getElementById('tab-clientes-btn').classList.add('active'); document.getElementById('view-clientes').classList.add('active'); renderAdminClientsManager(); }
+    else if (view === 'historico') { const btnHist = document.getElementById('tab-historico-btn'); if(btnHist) btnHist.classList.add('active'); document.getElementById('view-historico').classList.add('active'); renderClientHistory(); }
+    else if (view === 'admin') { const btnAdm = document.getElementById('tab-admin-btn'); if(btnAdm) btnAdm.classList.add('active'); document.getElementById('view-admin').classList.add('active'); renderAdminOrders(); syncStoreStatusInterface(isStoreOpenGlobal); }
+    else if (view === 'gerenciar') { const btnGer = document.getElementById('tab-gerenciar-btn'); if(btnGer) btnGer.classList.add('active'); document.getElementById('view-gerenciar').classList.add('active'); renderAdminInventoryManager(); }
+    else if (view === 'clientes') { const btnCli = document.getElementById('tab-clientes-btn'); if(btnCli) btnCli.classList.add('active'); document.getElementById('view-clientes').classList.add('active'); renderAdminClientsManager(); }
 }
 
 async function fetchAndRenderStore() {
@@ -344,6 +389,9 @@ function openBuyModal(product) {
     selectedFlavor = null;
     resetHoldButton(); 
 
+    const warningBox = document.getElementById('checkout-closed-warning');
+    if(warningBox) { warningBox.style.display = isStoreOpenGlobal ? 'none' : 'block'; }
+
     const buttonsContainer = document.getElementById('flavor-buttons-container');
     buttonsContainer.innerHTML = '';
     product.flavors.forEach(f => {
@@ -427,14 +475,20 @@ async function executeOrderCheckoutProcess() {
     const address = sanitizeInput(document.getElementById('client-address').value);
     const precoFinal = prod.is_promo ? Number(prod.promo_price) : Number(prod.price);
 
+    const statusInicialDaOrdem = isStoreOpenGlobal ? 'recebido' : 'fechado';
+
     await supabaseClient.from('pods_orders').insert([{
         client_name: currentUser.name, client_phone: currentUser.phone, client_address: address,
         product_name: prod.name, flavor: selectedFlavor, product_price: precoFinal,
         delivery_price: TAXA_FRETE, total_price: precoFinal + TAXA_FRETE,
-        status: 'recebido', wait_time: ''
+        status: statusInicialDaOrdem, wait_time: ''
     }]);
 
-    showPremiumNotification("Ordem Enviada!", "Seu pedido foi faturado e já acendeu no painel mestre.", "success");
+    const mensagemSucesso = isStoreOpenGlobal 
+        ? "Seu pedido foi faturado e já acendeu no painel mestre." 
+        : "Loja Fechada! Seu pedido foi agendado e será confirmado na abertura.";
+
+    showPremiumNotification("Ordem Sincronizada!", mensagemSucesso, "success");
     closeModal();
     fetchAndRenderStore();
 }
@@ -456,25 +510,36 @@ async function renderClientHistory() {
         let fillWidth = "0%";
         let step1Class = "", step2Class = "", step3Class = "", step4Class = "";
 
-        if(currentStatus === 'recebido') { fillWidth = "0%"; step1Class = "active"; }
+        let labelPasso1 = "Recebido";
+        if(currentStatus === 'fechado') {
+            fillWidth = "0%";
+            step1Class = "active";
+            labelPasso1 = "Agendado 🌙";
+        } else if(currentStatus === 'recebido') { fillWidth = "0%"; step1Class = "active"; }
         else if(currentStatus === 'preparando') { fillWidth = "33%"; step1Class = "active"; step2Class = "active"; }
         else if(currentStatus === 'rota') { fillWidth = "66%"; step1Class = "active"; step2Class = "active"; step3Class = "active"; }
         else if(currentStatus === 'concluido') { fillWidth = "100%"; step1Class = "active"; step2Class = "active"; step3Class = "active"; step4Class = "active"; }
 
         let htmlTempoEspera = '';
-        if(currentStatus !== 'concluido' && o.wait_time && o.wait_time.trim() !== '') {
+        if(currentStatus !== 'concluido' && currentStatus !== 'fechado' && o.wait_time && o.wait_time.trim() !== '') {
             htmlTempoEspera = `
                 <div class="wait-time-badge">
                     <span style="font-size: 13px; color: var(--text-muted);">🕒 Previsão de Entrega:</span>
                     <strong style="color: var(--success); font-size: 14px;">${o.wait_time}</strong>
                 </div>`;
+        } else if (currentStatus === 'fechado') {
+            htmlTempoEspera = `
+                <div class="wait-time-badge" style="border-color: rgba(255,159,10,0.3);">
+                    <span style="font-size: 13px; color: var(--text-muted);">🌙 Aguardando Abertura:</span>
+                    <strong style="color: var(--warning); font-size: 13px;">Será aceito na abertura</strong>
+                </div>`;
         }
 
         container.innerHTML += `
-            <div class="order-card" style="border-left-color: ${currentStatus === 'concluido' ? 'var(--success)' : 'var(--primary)'}">
+            <div class="order-card" style="border-left-color: ${currentStatus === 'concluido' ? 'var(--success)' : (currentStatus === 'fechado' ? 'var(--warning)' : 'var(--primary)')}">
                 <div class="order-header">
                     <strong>ORDEM #${o.id.toString().slice(-4)}</strong>
-                    <span style="color: ${currentStatus === 'concluido' ? 'var(--success)' : 'var(--primary)'}; font-size: 12px; font-weight:700;">
+                    <span style="color: ${currentStatus === 'concluido' ? 'var(--success)' : (currentStatus === 'fechado' ? 'var(--warning)' : 'var(--primary)')}; font-size: 12px; font-weight:700;">
                         ${currentStatus.toUpperCase()}
                     </span>
                 </div>
@@ -490,7 +555,7 @@ async function renderClientHistory() {
                             
                             <div class="uber-step ${step1Class}">
                                 <div class="uber-dot">1</div>
-                                <div class="uber-step-label">Recebido</div>
+                                <div class="uber-step-label">${labelPasso1}</div>
                             </div>
                             <div class="uber-step ${step2Class}">
                                 <div class="uber-dot">2</div>
@@ -524,14 +589,21 @@ async function renderAdminOrders() {
         const linkWhatsapp = `https://wa.me/55${o.client_phone}?text=${textoMensagem}`;
         const statusAtual = o.status || 'recebido';
 
+        let cardStyleExtra = '';
+        let badgeNotificacaoFechado = '';
+        if(statusAtual === 'fechado') {
+            cardStyleExtra = 'style="border-left-color: var(--warning); background: rgba(255,159,10,0.02);"';
+            badgeNotificacaoFechado = `<span style="background:var(--warning); color:#000; font-size:10px; padding:2px 6px; border-radius:4px; font-weight:700; margin-left:10px;">🌙 FEITO COM LOJA FECHADA</span>`;
+        }
+
         container.innerHTML += `
-            <div class="order-card" id="order-card-adm-${o.id}">
-                <div class="order-header"><strong>ORDEM #${o.id}</strong></div>
+            <div class="order-card" id="order-card-adm-${o.id}" ${cardStyleExtra}>
+                <div class="order-header"><strong>ORDEM #${o.id}</strong> ${badgeNotificacaoFechado}</div>
                 <div class="order-body">
                     <p><strong>Cliente:</strong> ${o.client_name} [${o.client_phone}]</p>
                     <p><strong>Destino:</strong> ${o.client_address}</p>
                     <p style="color: var(--primary); margin: 6px 0;">Item: 1x ${o.product_name} (${o.flavor})</p>
-                    <p style="font-weight:600;">Total Faturado: R$ ${Number(o.total_price).toFixed(2)}</p>
+                    <p style="font-weight:600; margin-bottom:12px;">Total Faturado: R$ ${Number(o.total_price).toFixed(2)}</p>
                     
                     <div class="adm-wait-input-group">
                         <input type="text" id="adm-wait-time-${o.id}" placeholder="Ex: 30 a 45 min" value="${o.wait_time || ''}">
@@ -539,7 +611,7 @@ async function renderAdminOrders() {
                     </div>
 
                     <div class="adm-status-row">
-                        <button class="btn-adm-status ${statusAtual === 'recebido' ? 'current' : ''}" onclick="updateOrderStatus(${o.id}, 'recebido')">Recebido</button>
+                        <button class="btn-adm-status ${statusAtual === 'recebido' ? 'current' : ''}" onclick="updateOrderStatus(${o.id}, 'recebido')">Aceitar/Recebido</button>
                         <button class="btn-adm-status ${statusAtual === 'preparando' ? 'current' : ''}" onclick="updateOrderStatus(${o.id}, 'preparando')">Preparar</button>
                         <button class="btn-adm-status ${statusAtual === 'rota' ? 'current' : ''}" onclick="updateOrderStatus(${o.id}, 'rota')">Em Rota</button>
                         <button class="btn-adm-status" onclick="moveOrderToFinalHistory(${o.id})">✓ Concluir</button>
@@ -691,9 +763,7 @@ async function saveProduct(e) {
             .from('pods')
             .getPublicUrl(uniqueFileName);
             
-        if(publicUrlData) {
-            publicImageUrl = publicUrlData.publicUrl;
-        }
+        if(publicUrlData) { publicImageUrl = publicUrlData.publicUrl; }
     }
 
     const { error } = await supabaseClient.from('pods_products').insert([{ 
