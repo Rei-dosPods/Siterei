@@ -33,7 +33,6 @@
                 </div>
                 <div class="form-group">
                     <label>WhatsApp (Com DDD)</label>
-                    <!-- Mantido tel para abrir os números no teclado do celular, combinando com o novo login 404 -->
                     <input type="tel" id="auth-phone" placeholder="Apenas números" required>
                 </div>
                 <div class="form-group">
@@ -76,13 +75,11 @@
 
         <!-- SEÇÃO 1: VITRINE DA LOJA (CLIENTE) -->
         <section id="view-loja" class="view-section active">
-            <!-- Seção de Ofertas Imperdíveis -->
             <div id="deals-section" class="deals-wrapper" style="display: none;">
                 <h2 class="section-title-premium">🔥 Ofertas Imperdíveis</h2>
                 <div class="products-grid scroll-horizontal" id="products-container-deals"></div>
             </div>
 
-            <!-- SISTEMA DE BUSCA E FILTROS EM LINHA -->
             <div class="search-filter-wrapper">
                 <input type="text" id="store-search-input" placeholder="🔍 Buscar dispositivo por nome..." oninput="filterStoreData()">
                 <div class="category-tabs-row">
@@ -96,15 +93,15 @@
             <div class="products-grid" id="products-container-client"></div>
         </section>
 
-        <!-- SEÇÃO 2: HISTÓRICO DO CLIENTE -->
+        <!-- SEÇÃO 2: HISTÓRICO DO CLIENTE (UBER STYLE PROGRESS) -->
         <section id="view-historico" class="view-section">
-            <h2 class="section-title">Suas Requisições</h2>
+            <h2 class="section-title-premium">📍 Rastreamento de Ordens</h2>
             <div class="orders-list" id="client-orders-container"></div>
         </section>
 
-        <!-- SEÇÃO 3: PAINEL DE ORDENS (ADM) -->
+        <!-- SEÇÃO 3: PAINEL DE ORDENS (ADM CONTROL) -->
         <section id="view-admin" class="view-section">
-            <h2 class="section-title">Fluxo de Pedidos Pendentes</h2>
+            <h2 class="section-title-premium">Fluxo de Logística Ativa</h2>
             <div class="orders-list" id="orders-container"></div>
         </section>
 

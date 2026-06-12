@@ -18,6 +18,9 @@ let holdTimer = null;
 let holdProgress = 0;
 const HOLD_DURATION = 1500; 
 
+// Canal de escuta Realtime global
+let realtimeChannel = null;
+
 window.onload = function() {
     const savedUser = sessionStorage.getItem('logged_user');
     if(savedUser) {
@@ -36,9 +39,7 @@ window.onload = function() {
     if(fileInput) {
         fileInput.addEventListener('change', function(e) {
             const file = e.target.files[0];
-            if(file) {
-                currentProductFile = file; 
-            }
+            if(file) { currentProductFile = file; }
         });
     }
 
@@ -100,7 +101,6 @@ async function handleAuth(e) {
     const phoneInput = sanitizeInput(document.getElementById('auth-phone').value.trim());
     const passwordInput = document.getElementById('auth-password').value;
 
-    // 🛡️ MUDANÇA DEMANDADA: NOVO LOGIN DE ADMIN TOTALMENTE NUMÉRICO PARA TECLADO MOBILE
     if (phoneInput === '404' && passwordInput === '24032008') {
         currentUser = { name: "Administrador (Rei)", phone: "404", role: "admin" };
         sessionStorage.setItem('logged_user', JSON.stringify(currentUser));
@@ -154,15 +154,51 @@ function logUserIn(user) {
     document.getElementById('main-content').style.display = 'block';
     document.getElementById('user-display-name').innerText = user.name;
     switchView('loja');
+    setupRealtimeListeners(); 
 }
 
 function handleLogout() {
+    if (realtimeChannel) {
+        supabaseClient.removeChannel(realtimeChannel);
+    }
     sessionStorage.removeItem('logged_user');
     currentUser = null;
     document.getElementById('main-content').style.display = 'none';
     document.getElementById('auth-screen').style.display = 'flex';
     document.getElementById('auth-form').reset();
     setAuthMode('login');
+}
+
+function setupRealtimeListeners() {
+    if (!supabaseClient) return;
+
+    if (realtimeChannel) {
+        supabaseClient.removeChannel(realtimeChannel);
+    }
+
+    realtimeChannel = supabaseClient.channel('custom-all-channel')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'pods_orders' }, (payload) => {
+        console.log('Alteração detectada em ordens:', payload);
+        
+        const activeSection = document.querySelector('.view-section.active');
+        if (!activeSection) return;
+
+        if (activeSection.id === 'view-admin' && currentUser.role === 'admin') {
+            renderAdminOrders(); 
+        } else if (activeSection.id === 'view-historico' && currentUser.role === 'client') {
+            renderClientHistory(); 
+        } else if (activeSection.id === 'view-clientes' && currentUser.role === 'admin') {
+            renderAdminClientsManager();
+        }
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'pods_products' }, (payload) => {
+        console.log('Alteração detectada em catálogo/estoque:', payload);
+        fetchAndRenderStore(); 
+        if (currentUser.role === 'admin' && document.querySelector('#view-gerenciar.active')) {
+            renderAdminInventoryManager();
+        }
+    })
+    .subscribe();
 }
 
 function switchView(view) {
@@ -195,7 +231,7 @@ function switchView(view) {
 
 async function fetchAndRenderStore() {
     const containerGeral = document.getElementById('products-container-client');
-    if(containerGeral) containerGeral.innerHTML = '<p style="color:var(--text-muted)">Sincronizando vitrine...</p>';
+    if(containerGeral && containerGeral.innerHTML === '') containerGeral.innerHTML = '<p style="color:var(--text-muted)">Sincronizando vitrine...</p>';
 
     const { data: products } = await supabaseClient.from('pods_products').select('*').order('name', { ascending: true });
     if(!products) return;
@@ -204,7 +240,6 @@ async function fetchAndRenderStore() {
     filterStoreData(); 
 }
 
-// MUDANÇA: CORRIGIDO O BUG DA BARRA BRANCA (A div agora recebe a classe .product-img obrigatória no HTML)
 function filterStoreData() {
     const query = document.getElementById('store-search-input').value.toLowerCase().trim();
     const containerGeral = document.getElementById('products-container-client');
@@ -395,37 +430,154 @@ async function executeOrderCheckoutProcess() {
     await supabaseClient.from('pods_orders').insert([{
         client_name: currentUser.name, client_phone: currentUser.phone, client_address: address,
         product_name: prod.name, flavor: selectedFlavor, product_price: precoFinal,
-        delivery_price: TAXA_FRETE, total_price: precoFinal + TAXA_FRETE
+        delivery_price: TAXA_FRETE, total_price: precoFinal + TAXA_FRETE,
+        status: 'recebido', wait_time: ''
     }]);
 
-    showPremiumNotification("Ordem Enviada!", "Seu pedido foi computado com sucesso.", "success");
+    showPremiumNotification("Ordem Enviada!", "Seu pedido foi faturado e já acendeu no painel mestre.", "success");
     closeModal();
     fetchAndRenderStore();
 }
 
 async function renderClientHistory() {
     const container = document.getElementById('client-orders-container');
+    
     const { data: activeOrders } = await supabaseClient.from('pods_orders').select('*').eq('client_phone', currentUser.phone);
     const { data: completedOrders } = await supabaseClient.from('pods_history').select('*').eq('client_phone', currentUser.phone);
 
     const totalOrders = [...(activeOrders || []), ...(completedOrders || [])];
-    if(totalOrders.length === 0) { container.innerHTML = '<p style="color:var(--text-muted);">Sem ordens finalizadas.</p>'; return; }
+    if(totalOrders.length === 0) { container.innerHTML = '<p style="color:var(--text-muted);">Sem ordens ativas ou finalizadas.</p>'; return; }
     
     container.innerHTML = '';
     totalOrders.reverse().forEach(o => {
-        const isPending = activeOrders ? activeOrders.some(activeItem => activeItem.id === o.id) : false;
-        const statusText = isPending ? "Em rota de entrega" : "Entrega Concluída ✓";
-        const statusColor = isPending ? "var(--primary)" : "var(--success)";
+        const isFromHistory = completedOrders ? completedOrders.some(compItem => compItem.id === o.id) : false;
+        const currentStatus = isFromHistory ? 'concluido' : (o.status || 'recebido');
+
+        let fillWidth = "0%";
+        let step1Class = "", step2Class = "", step3Class = "", step4Class = "";
+
+        if(currentStatus === 'recebido') { fillWidth = "0%"; step1Class = "active"; }
+        else if(currentStatus === 'preparando') { fillWidth = "33%"; step1Class = "active"; step2Class = "active"; }
+        else if(currentStatus === 'rota') { fillWidth = "66%"; step1Class = "active"; step2Class = "active"; step3Class = "active"; }
+        else if(currentStatus === 'concluido') { fillWidth = "100%"; step1Class = "active"; step2Class = "active"; step3Class = "active"; step4Class = "active"; }
+
+        let htmlTempoEspera = '';
+        if(currentStatus !== 'concluido' && o.wait_time && o.wait_time.trim() !== '') {
+            htmlTempoEspera = `
+                <div class="wait-time-badge">
+                    <span style="font-size: 13px; color: var(--text-muted);">🕒 Previsão de Entrega:</span>
+                    <strong style="color: var(--success); font-size: 14px;">${o.wait_time}</strong>
+                </div>`;
+        }
 
         container.innerHTML += `
-            <div class="order-card" style="border-left-color: ${statusColor}">
-                <div class="order-header"><strong>ORDEM #${o.id.toString().slice(-4)}</strong><span style="color:${statusColor}">${statusText}</span></div>
-                <div class="order-body">
+            <div class="order-card" style="border-left-color: ${currentStatus === 'concluido' ? 'var(--success)' : 'var(--primary)'}">
+                <div class="order-header">
+                    <strong>ORDEM #${o.id.toString().slice(-4)}</strong>
+                    <span style="color: ${currentStatus === 'concluido' ? 'var(--success)' : 'var(--primary)'}; font-size: 12px; font-weight:700;">
+                        ${currentStatus.toUpperCase()}
+                    </span>
+                </div>
+                <div class="order-body" style="margin-top: 8px;">
                     <p style="color: var(--text); font-size:14px; font-weight:500;">1x ${o.product_name} [${o.flavor}]</p>
-                    <p style="font-weight:600; margin-top:5px; font-size:13px;">Total: R$ ${Number(o.total_price).toFixed(2)}</p>
+                    <p style="font-weight:600; font-size:13px; margin: 5px 0 15px 0;">Total: R$ ${Number(o.total_price).toFixed(2)}</p>
+                    
+                    ${htmlTempoEspera}
+
+                    <div class="uber-tracker-box">
+                        <div class="uber-timeline">
+                            <div class="uber-timeline-fill" style="width: ${fillWidth}"></div>
+                            
+                            <div class="uber-step ${step1Class}">
+                                <div class="uber-dot">1</div>
+                                <div class="uber-step-label">Recebido</div>
+                            </div>
+                            <div class="uber-step ${step2Class}">
+                                <div class="uber-dot">2</div>
+                                <div class="uber-step-label">Preparando</div>
+                            </div>
+                            <div class="uber-step ${step3Class}">
+                                <div class="uber-dot">3</div>
+                                <div class="uber-step-label">Em Rota</div>
+                            </div>
+                            <div class="uber-step ${step4Class}">
+                                <div class="uber-dot">4</div>
+                                <div class="uber-step-label">Entregue</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>`;
     });
+}
+
+async function renderAdminOrders() {
+    if(!currentUser || currentUser.role !== 'admin') return;
+
+    const container = document.getElementById('orders-container');
+    const { data: orders } = await supabaseClient.from('pods_orders').select('*').order('id', { ascending: false });
+
+    if(!orders || orders.length === 0) { container.innerHTML = '<p style="color:var(--text-muted)">Sem ordens de envio ativas no momento.</p>'; return; }
+    container.innerHTML = '';
+    orders.forEach(o => {
+        const textoMensagem = `Confirmando pedido no Rei dos Pods: %0A%0A📦 *1x ${o.product_name} (${o.flavor})* %0A💵 *TOTAL:* R$ ${Number(o.total_price).toFixed(2)} %0A📍 *Endereço:* ${o.client_address}`;
+        const linkWhatsapp = `https://wa.me/55${o.client_phone}?text=${textoMensagem}`;
+        const statusAtual = o.status || 'recebido';
+
+        container.innerHTML += `
+            <div class="order-card" id="order-card-adm-${o.id}">
+                <div class="order-header"><strong>ORDEM #${o.id}</strong></div>
+                <div class="order-body">
+                    <p><strong>Cliente:</strong> ${o.client_name} [${o.client_phone}]</p>
+                    <p><strong>Destino:</strong> ${o.client_address}</p>
+                    <p style="color: var(--primary); margin: 6px 0;">Item: 1x ${o.product_name} (${o.flavor})</p>
+                    <p style="font-weight:600;">Total Faturado: R$ ${Number(o.total_price).toFixed(2)}</p>
+                    
+                    <div class="adm-wait-input-group">
+                        <input type="text" id="adm-wait-time-${o.id}" placeholder="Ex: 30 a 45 min" value="${o.wait_time || ''}">
+                        <button class="btn-save-wait" onclick="updateOrderWaitTime(${o.id})">Fixar Tempo</button>
+                    </div>
+
+                    <div class="adm-status-row">
+                        <button class="btn-adm-status ${statusAtual === 'recebido' ? 'current' : ''}" onclick="updateOrderStatus(${o.id}, 'recebido')">Recebido</button>
+                        <button class="btn-adm-status ${statusAtual === 'preparando' ? 'current' : ''}" onclick="updateOrderStatus(${o.id}, 'preparando')">Preparar</button>
+                        <button class="btn-adm-status ${statusAtual === 'rota' ? 'current' : ''}" onclick="updateOrderStatus(${o.id}, 'rota')">Em Rota</button>
+                        <button class="btn-adm-status" onclick="moveOrderToFinalHistory(${o.id})">✓ Concluir</button>
+                    </div>
+
+                    <a href="${linkWhatsapp}" target="_blank" class="whatsapp-btn">💬 Chamar no WhatsApp</a>
+                </div>
+            </div>`;
+    });
+}
+
+async function updateOrderWaitTime(orderId) {
+    const inputVal = document.getElementById(`adm-wait-time-${orderId}`).value.trim();
+    await supabaseClient.from('pods_orders').update({ wait_time: inputVal }).eq('id', orderId);
+    showPremiumNotification("Tempo Atualizado", "Previsão de entrega enviada.", "success");
+}
+
+async function updateOrderStatus(orderId, newStatus) {
+    await supabaseClient.from('pods_orders').update({ status: newStatus }).eq('id', orderId);
+    showPremiumNotification("Fase Avançada", `Status da ordem alterado para: ${newStatus.toUpperCase()}`, "success");
+}
+
+async function moveOrderToFinalHistory(orderId) {
+    if(!currentUser || currentUser.role !== 'admin') return;
+
+    const { data: order } = await supabaseClient.from('pods_orders').select('*').eq('id', orderId).single();
+    if(!order) return;
+
+    const { error: insertError } = await supabaseClient.from('pods_history').insert([{
+        client_name: order.client_name, client_phone: order.client_phone, client_address: order.client_address,
+        product_name: order.product_name, flavor: order.flavor, product_price: order.product_price,
+        delivery_price: order.delivery_price, total_price: order.total_price, status: 'concluido', wait_time: ''
+    }]);
+
+    if(!insertError) {
+        await supabaseClient.from('pods_orders').delete().eq('id', orderId);
+        showPremiumNotification("Entrega Finalizada", "Pedido arquivado no histórico.", "success");
+    }
 }
 
 async function renderAdminInventoryManager() {
@@ -495,11 +647,8 @@ async function updateProductInline(productId) {
     const stock = parseInt(document.getElementById(`edit-stock-${productId}`).value);
     const flavors = document.getElementById(`edit-flavors-${productId}`).value.split(',').map(f => f.trim()).filter(f => f !== "");
 
-    const { error } = await supabaseClient.from('pods_products').update({ price, is_promo: isPromo, promo_price: promoPrice, stock, flavors }).eq('id', productId);
-    if(!error) { 
-        showPremiumNotification("Catálogo Atualizado", "Alterações salvas com sucesso.", "success");
-        renderAdminInventoryManager(); 
-    }
+    await supabaseClient.from('pods_products').update({ price, is_promo: isPromo, promo_price: promoPrice, stock, flavors }).eq('id', productId);
+    showPremiumNotification("Catálogo Atualizado", "Alterações salvas com sucesso.", "success");
 }
 
 async function deleteProductFromInventory(productId) {
@@ -508,7 +657,6 @@ async function deleteProductFromInventory(productId) {
     if(confirm("Remover permanentemente?")) { 
         await supabaseClient.from('pods_products').delete().eq('id', productId); 
         showPremiumNotification("Item Excluído", "O pod foi removido do acervo público.", "success");
-        renderAdminInventoryManager(); 
     }
 }
 
@@ -557,55 +705,8 @@ async function saveProduct(e) {
         showPremiumNotification("Item Publicado!", "O novo pod já se encontra visível em alta definição.", "success");
         document.getElementById('product-form').reset(); 
         currentProductFile = null; 
-        renderAdminInventoryManager(); 
     } else {
         showPremiumNotification("Erro Operacional", "Erro ao salvar pod na tabela relacional.", "error");
-    }
-}
-
-async function renderAdminOrders() {
-    if(!currentUser || currentUser.role !== 'admin') return;
-
-    const container = document.getElementById('orders-container');
-    const { data: orders } = await supabaseClient.from('pods_orders').select('*').order('id', { ascending: false });
-
-    if(!orders || orders.length === 0) { container.innerHTML = '<p style="color:var(--text-muted)">Sem ordens de envio pendentes.</p>'; return; }
-    container.innerHTML = '';
-    orders.forEach(o => {
-        const textoMensagem = `Confirmando pedido no Rei dos Pods: %0A%0A📦 *1x ${o.product_name} (${o.flavor})* %0A💵 *TOTAL:* R$ ${Number(o.total_price).toFixed(2)} %0A📍 *Endereço:* ${o.client_address}`;
-        const linkWhatsapp = `https://wa.me/55${o.client_phone}?text=${textoMensagem}`;
-
-        container.innerHTML += `
-            <div class="order-card" id="order-card-adm-${o.id}">
-                <div class="order-header"><strong>ORDEM #${o.id}</strong></div>
-                <div class="order-body">
-                    <p><strong>Cliente:</strong> ${o.client_name} [${o.client_phone}]</p>
-                    <p><strong>Destino:</strong> ${o.client_address}</p>
-                    <p style="color: var(--primary); margin: 6px 0;">Item: 1x ${o.product_name} (${o.flavor})</p>
-                    <p style="font-weight:600;">Total Faturado: R$ ${Number(o.total_price).toFixed(2)}</p>
-                    <a href="${linkWhatsapp}" target="_blank" class="whatsapp-btn">💬 Chamar no WhatsApp</a>
-                    <button class="btn-action-complete" onclick="markOrderAsComplete(${o.id})">✓ Marcar como Concluído</button>
-                </div>
-            </div>`;
-    });
-}
-
-async function markOrderAsComplete(orderId) {
-    if(!currentUser || currentUser.role !== 'admin') return;
-
-    const { data: order } = await supabaseClient.from('pods_orders').select('*').eq('id', orderId).single();
-    if(!order) return;
-
-    const { error: insertError } = await supabaseClient.from('pods_history').insert([{
-        client_name: order.client_name, client_phone: order.client_phone, client_address: order.client_address,
-        product_name: order.product_name, flavor: order.flavor, product_price: order.product_price,
-        delivery_price: order.delivery_price, total_price: order.total_price
-    }]);
-
-    if(!insertError) {
-        await supabaseClient.from('pods_orders').delete().eq('id', orderId);
-        showPremiumNotification("Entrega Efetuada", `A rota do pedido #${orderId} foi concluída.`, "success");
-        renderAdminOrders();
     }
 }
 
@@ -633,7 +734,7 @@ async function renderAdminClientsManager() {
         } else {
             allClientPurchases.reverse().forEach(o => {
                 const isPending = activeFilter.some(activeItem => activeItem.id === o.id);
-                const tagStatus = isPending ? '<span style="color:var(--primary); font-size:10px;">[Pendente]</span>' : '<span style="color:var(--success); font-size:10px;">[Entregue]</span>';
+                const tagStatus = isPending ? `<span style="color:var(--primary); font-size:10px;">[${o.status || 'Pendente'}]</span>` : '<span style="color:var(--success); font-size:10px;">[Entregue]</span>';
 
                 historyRowsHTML += `
                     <div class="mini-order-row">

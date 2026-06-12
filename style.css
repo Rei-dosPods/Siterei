@@ -75,22 +75,22 @@ body {
 .category-pill { background: #141419; color: var(--text-muted); border: 1px solid var(--border); padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
 .category-pill.active { background: var(--premium-gradient); color: #fff; border-color: transparent; }
 
-/* 🖼️ MOTOR DE IMAGEM CORRIGIDO (SEM COMPRESSÃO / FEIO) */
+/* 🖼️ IMAGENS */
 .product-img {
     width: 100%;
-    height: 160px; /* Altura fixa ideal para a vitrine mobile */
-    background-size: contain; /* Faz a foto inteira caber no quadrado sem cortar ou esticar */
+    height: 160px;
+    background-size: contain;
     background-position: center;
     background-repeat: no-repeat;
     border-radius: 12px;
-    background-color: rgba(0, 0, 0, 0.2); /* Fundo sutil para destacar pods transparentes/brancos */
+    background-color: rgba(0, 0, 0, 0.2);
     margin-bottom: 10px;
 }
 
 .modal-preview-img {
     width: 100%;
     height: 260px;
-    background-size: contain; /* Remove o esticamento feio no pop-up de detalhes */
+    background-size: contain;
     background-position: center;
     background-repeat: no-repeat;
     border-radius: 14px;
@@ -103,12 +103,156 @@ body {
 .hold-progress-bar { position: absolute; top: 0; left: 0; width: 0%; height: 100%; background: var(--premium-gradient); transition: width 0.1s linear; z-index: 1; }
 .hold-text { position: relative; z-index: 2; color: #fff; font-size: 14px; font-weight: 700; letter-spacing: 0.3px; }
 
-/* ⚠️ ALERTAS DE ESTOQUE ADM */
+/* ====================================================
+   🚖 DESIGN DA BARRA DE PROGRESSO DINÂMICA (UBER STYLE)
+   ==================================================== */
+.uber-tracker-box {
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px 15px;
+    margin-top: 12px;
+}
+
+.uber-timeline {
+    display: flex;
+    justify-content: space-between;
+    position: relative;
+    margin: 25px 0 15px 0;
+}
+
+/* Linha de fundo cinza apagada */
+.uber-timeline::before {
+    content: "";
+    position: absolute;
+    top: 10px; left: 5px; right: 5px;
+    height: 3px;
+    background: var(--border);
+    z-index: 1;
+}
+
+/* Linha preenchida bronze acendendo dinamicamente */
+.uber-timeline-fill {
+    position: absolute;
+    top: 10px; left: 5px;
+    height: 3px;
+    background: var(--premium-gradient);
+    z-index: 2;
+    transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.uber-step {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+}
+
+.uber-dot {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--input-bg);
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: var(--text-muted);
+    font-weight: bold;
+    transition: all 0.3s ease;
+}
+
+.uber-step.active .uber-dot {
+    background: var(--premium-gradient);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 0 15px rgba(195, 164, 117, 0.6);
+}
+
+.uber-step-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-top: 8px;
+    text-align: center;
+    letter-spacing: 0.3px;
+}
+
+.uber-step.active .uber-step-label {
+    color: var(--primary);
+}
+
+/* Caixa do Tempo de Espera Estilizada */
+.wait-time-badge {
+    background: linear-gradient(135deg, rgba(195,164,117,0.1) 0%, transparent 100%);
+    border: 1px solid rgba(195,164,117,0.2);
+    border-radius: 10px;
+    padding: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+/* 🔧 INTEGRAÇÃO COM DESIGN DO PAINEL ADM CONTROLLER */
+.adm-status-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-top: 12px;
+}
+.btn-adm-status {
+    padding: 8px 4px;
+    border: 1px solid var(--border);
+    background: var(--input-bg);
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.btn-adm-status.current {
+    background: var(--premium-gradient);
+    color: #fff;
+    border-color: transparent;
+}
+.adm-wait-input-group {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+.adm-wait-input-group input {
+    flex: 1;
+    padding: 10px;
+    background: #000;
+    border: 1px solid var(--border);
+    color: #fff;
+    border-radius: 8px;
+    font-size: 13px;
+}
+.btn-save-wait {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    padding: 0 15px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+/* ALERTAS DE ESTOQUE ADM */
 .inventory-card.stock-out { border: 1px solid rgba(255, 59, 48, 0.4) !important; background: linear-gradient(135deg, #0c0c10 0%, rgba(255, 59, 48, 0.03) 100%) !important; }
 .inventory-card.stock-low { border: 1px solid rgba(255, 159, 10, 0.4) !important; background: linear-gradient(135deg, #0c0c10 0%, rgba(255, 159, 10, 0.03) 100%) !important; }
 .stock-alert-label { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; }
 
-/* POP-UPS DE AVISO (CORRIGIDO z-index) */
+/* POP-UPS */
 #notification-modal { z-index: 10000 !important; display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.95); backdrop-filter: blur(15px); justify-content: center; align-items: center; padding: 20px; }
 .alert-popup { text-align: center !important; padding: 40px 24px !important; max-width: 320px !important; width: 100% !important; border-radius: 24px !important; background: #0f0f12 !important; border: 1px solid var(--border) !important; }
 .alert-icon { width: 60px; height: 60px; border-radius: 50%; display: flex !important; align-items: center; justify-content: center; font-size: 26px; font-weight: bold; margin: 0 auto 20px auto !important; }
@@ -117,7 +261,7 @@ body {
 .error-alert { border-color: rgba(255, 59, 48, 0.3) !important; box-shadow: 0 0 30px rgba(255, 59, 48, 0.15) !important; }
 .error-alert .alert-icon { background: rgba(255, 59, 48, 0.1) !important; color: var(--danger) !important; border: 1px solid rgba(255, 59, 48, 0.3) !important; }
 
-/* ACABAMENTOS DA VITRINE */
+/* MANUTENÇÃO VITRINE */
 .deals-wrapper { background: linear-gradient(180deg, rgba(195,164,117,0.05) 0%, transparent 100%); padding: 20px; border-radius: 20px; border: 1px solid rgba(195,164,117,0.08); margin-bottom: 20px; }
 .scroll-horizontal { display: flex !important; overflow-x: auto; gap: 20px; padding-bottom: 10px; scrollbar-width: none; }
 .scroll-horizontal::-webkit-scrollbar { display: none; }
@@ -128,7 +272,6 @@ body {
 .flavor-btn { background: #141419; color: #fff; border: 1px solid var(--border); padding: 12px 20px; border-radius: 30px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
 .flavor-btn.selected { background: var(--premium-gradient); color: #fff; border-color: transparent; box-shadow: 0 0 15px rgba(195,164,117,0.3); transform: translateY(-1px); }
 .preview-only .flavor-btn { pointer-events: none; opacity: 0.8; }
-.btn-action-complete { background: rgba(52, 199, 89, 0.1); color: var(--success); border: 1px solid rgba(52, 199, 89, 0.2); padding: 12px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 600; transition: all 0.2s; margin-top: 10px; }
 .close-modal-btn { position: absolute; top: 15px; right: 20px; font-size: 28px; color: var(--text-muted); cursor: pointer; }
 .auth-wrapper { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle at center, #16130e 0%, var(--dark) 80%); display: flex; justify-content: center; align-items: center; z-index: 9999; padding: 20px; }
 .auth-card { background: rgba(15, 15, 18, 0.75); border: 1px solid rgba(195, 164, 117, 0.1); backdrop-filter: blur(30px); border-radius: 24px; padding: 40px 30px; width: 100%; max-width: 390px; box-shadow: 0 30px 60px rgba(0, 0, 0, 0.8); }
