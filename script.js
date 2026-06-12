@@ -7,7 +7,7 @@ const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_U
 let currentUser = null;
 let authMode = "login";
 let selectedFlavor = null;
-let currentProductFile = null; // MUDANÇA: Agora armazena o arquivo real, não o texto base64
+let currentProductFile = null; 
 let openedProductData = null;
 let globalProductsCache = []; 
 let currentCategoryFilter = "all";
@@ -37,7 +37,7 @@ window.onload = function() {
         fileInput.addEventListener('change', function(e) {
             const file = e.target.files[0];
             if(file) {
-                currentProductFile = file; // Salva o arquivo real bruto para upload em HD
+                currentProductFile = file; 
             }
         });
     }
@@ -45,7 +45,6 @@ window.onload = function() {
     setupHoldToBuyButton();
 }
 
-// 🛡️ TRAVA DE SEGURANÇA: SANITIZAÇÃO CONTRA INJEÇÃO DE CÓDIGO (XSS)
 function sanitizeInput(text) {
     if (typeof text !== 'string') return text;
     return text
@@ -101,15 +100,16 @@ async function handleAuth(e) {
     const phoneInput = sanitizeInput(document.getElementById('auth-phone').value.trim());
     const passwordInput = document.getElementById('auth-password').value;
 
-    if (phoneInput === 'Rei' && passwordInput === '24032008') {
-        currentUser = { name: "Administrador (Rei)", phone: "Rei", role: "admin" };
+    // 🛡️ MUDANÇA DEMANDADA: NOVO LOGIN DE ADMIN TOTALMENTE NUMÉRICO PARA TECLADO MOBILE
+    if (phoneInput === '404' && passwordInput === '24032008') {
+        currentUser = { name: "Administrador (Rei)", phone: "404", role: "admin" };
         sessionStorage.setItem('logged_user', JSON.stringify(currentUser));
         logUserIn(currentUser);
         showPremiumNotification("Acesso Real", "Bem-vindo de volta, Majestade.", "success");
         return;
     }
 
-    if (phoneInput === 'Rei' || phoneInput === '123' || passwordInput === '24032008' || passwordInput === 'admin') {
+    if (phoneInput === '404' || phoneInput === 'Rei' || phoneInput === '123' || passwordInput === '24032008' || passwordInput === 'admin') {
         showPremiumNotification("Acesso Negado", "Credenciais administrativas inválidas.", "error");
         return;
     }
@@ -204,6 +204,7 @@ async function fetchAndRenderStore() {
     filterStoreData(); 
 }
 
+// MUDANÇA: CORRIGIDO O BUG DA BARRA BRANCA (A div agora recebe a classe .product-img obrigatória no HTML)
 function filterStoreData() {
     const query = document.getElementById('store-search-input').value.toLowerCase().trim();
     const containerGeral = document.getElementById('products-container-client');
@@ -230,7 +231,7 @@ function filterStoreData() {
             let stockText = p.stock >= 2 ? "Disponível" : (p.stock === 1 ? "Último!" : "Esgotado");
             let badgeClass = p.stock >= 2 ? "stock-badge available" : "stock-badge";
 
-            const estiloImagem = p.image ? `style="background-image: url('${p.image}'); border-style: solid;"` : '';
+            const estiloImagem = p.image ? `style="background-image: url('${p.image}');"` : '';
             let htmlPreco = p.is_promo ? `<span class="old-price">R$ ${p.price}</span>R$ ${p.promo_price}` : `R$ ${p.price}`;
             let htmlPromoBadge = p.is_promo ? `<span class="promo-badge">Sale</span>` : '';
 
@@ -511,7 +512,6 @@ async function deleteProductFromInventory(productId) {
     }
 }
 
-// 👑 NOVO PROCESSO DE PRODUTO: FAZ UPLOAD EM HD DA FOTO PRO SUPABASE STORAGE BUCKET
 async function saveProduct(e) {
     e.preventDefault();
     if(!currentUser || currentUser.role !== 'admin') return;
@@ -526,12 +526,10 @@ async function saveProduct(e) {
 
     let publicImageUrl = "";
 
-    // Se o usuário selecionou uma foto real, faz o upload em alta definição
     if(currentProductFile) {
         const fileExtension = currentProductFile.name.split('.').pop();
         const uniqueFileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExtension}`;
 
-        // 1. Envia o arquivo original bruto para a pasta 'pods' no Storage
         const { data: uploadData, error: uploadError } = await supabaseClient.storage
             .from('pods')
             .upload(uniqueFileName, currentProductFile);
@@ -541,7 +539,6 @@ async function saveProduct(e) {
             return;
         }
 
-        // 2. Extrai a URL pública da foto hospedada direto na nuvem
         const { data: publicUrlData } = supabaseClient.storage
             .from('pods')
             .getPublicUrl(uniqueFileName);
@@ -551,7 +548,6 @@ async function saveProduct(e) {
         }
     }
 
-    // 3. Salva a URL curta e limpa na tabela do produto
     const { error } = await supabaseClient.from('pods_products').insert([{ 
         name, puffs, price, is_promo: isPromoValue, promo_price: promoPrice, 
         image: publicImageUrl, flavors: flavorsArray, stock 
@@ -560,7 +556,7 @@ async function saveProduct(e) {
     if(!error) { 
         showPremiumNotification("Item Publicado!", "O novo pod já se encontra visível em alta definição.", "success");
         document.getElementById('product-form').reset(); 
-        currentProductFile = null; // Zera o arquivo temporário
+        currentProductFile = null; 
         renderAdminInventoryManager(); 
     } else {
         showPremiumNotification("Erro Operacional", "Erro ao salvar pod na tabela relacional.", "error");
