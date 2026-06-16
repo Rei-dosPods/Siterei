@@ -467,13 +467,15 @@ function filterStoreData() {
     globalProductsCache.forEach(p => {
         if(p.name.toLowerCase().includes(query)) {
             containerGeral.innerHTML += `
-                <div class="product-card" onclick="openDetailsModal(${p.id})">
-                    <div class="product-img" ${p.image ? `style="background-image: url('${p.image}');"` : ''}></div>
-                    <h3 class="product-title">${p.name}</h3>
-                    <p class="product-info">💨 ${p.puffs} Puffs</p>
-                    <span class="stock-badge available">${p.stock > 0 ? 'Disponível ('+p.stock+')' : 'Esgotado'}</span>
-                    <div class="price-tag" style="margin-top:10px;">R$ ${p.price.toFixed(2)}</div>
-                </div>`;
+    <div class="product-card" onclick="openDetailsModal(${p.id})">
+        <div class="product-img" style="${p.image ? `background-image: url('${p.image}');` : ''} background-size: cover; background-position: center; background-repeat: no-repeat;"></div>
+        <h3 class="product-title">${p.name}</h3>
+        <p class="product-info">💨 ${p.puffs} Puffs</p>
+        <span class="stock-badge ${p.stock > 0 ? 'available' : 'out-of-stock'}">
+            ${p.stock > 0 ? 'Disponível ('+p.stock+')' : 'Esgotado'}
+        </span>
+        <div class="price-tag" style="margin-top:10px;">R$ ${p.price.toFixed(2)}</div>
+    </div>`;
         }
     });
 }
@@ -482,12 +484,27 @@ function setCategoryFilter(cat) { currentCategoryFilter = cat; filterStoreData()
 async function openDetailsModal(productId) {
     const { data: product } = await supabaseClient.from('pods_products').select('*').eq('id', productId).single();
     if(!product) return;
+    
     openedProductData = product;
+    
+    // 1. Atualiza o título e textos
     document.getElementById('details-modal-title').innerText = product.name;
     document.getElementById('details-modal-puffs').innerText = `💨 Autonomia: ${product.puffs} Puffs`;
     document.getElementById('details-modal-price').innerText = `R$ ${product.price.toFixed(2)}`;
+    
+    // 2. A MÁGICA DA IMAGEM: Aplica o estilo de background no div da imagem
+    const imgDiv = document.getElementById('details-modal-img');
+    if (imgDiv) {
+        // Garantimos que ele vai buscar a URL que você salvou no banco
+        imgDiv.style.backgroundImage = `url('${product.image}')`;
+        imgDiv.style.backgroundSize = 'cover';
+        imgDiv.style.backgroundPosition = 'center';
+    }
+
+    // 3. Sabores
     const flavorsDiv = document.getElementById('details-modal-flavors'); flavorsDiv.innerHTML = '';
     product.flavors.forEach(f => { flavorsDiv.innerHTML += `<button type="button" class="flavor-btn">${f}</button>`; });
+    
     document.getElementById('details-modal').style.display = 'flex';
     document.getElementById('details-action-btn').onclick = () => { closeDetailsModal(); openBuyModal(product); };
 }
@@ -610,11 +627,59 @@ async function renderAdminInventoryManager() {
         container.innerHTML += `<div class="inventory-card"><h4>${p.name}</h4><div class="inventory-row-edit"><div><label>Preço</label><input type="number" step="0.01" id="inv-p-${p.id}" value="${p.price}"></div><div><label>Estoque</label><input type="number" id="inv-s-${p.id}" value="${p.stock}"></div></div><button class="btn-save-inline" onclick="saveInv(${p.id})">Salvar</button></div>`;
     });
 }
-async function saveInv(id) { await supabaseClient.from('pods_products').update({ price: parseFloat(document.getElementById(`inv-p-${id}`).value), stock: parseInt(document.getElementById(`inv-s-${id}`).value) }).eq('id', id); showPremiumNotification("Salvo", "Estoque modificado.", "success"); }
 async function saveProduct(e) {
     e.preventDefault();
-    await supabaseClient.from('pods_products').insert([{ name: sanitizeInput(document.getElementById('prod-name').value), puffs: parseInt(document.getElementById('prod-puffs').value), price: parseFloat(document.getElementById('prod-price').value), stock: parseInt(document.getElementById('prod-stock').value), flavors: document.getElementById('prod-flavors').value.split(',').map(f => f.trim()), is_promo:false, promo_price:0, company_id: currentUser.company_id }]);
-    showPremiumNotification("Publicado", "Item adicionado.", "success"); document.getElementById('product-form').reset();
+    const fileInput = document.getElementById('prod-image-file');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        showPremiumNotification("Erro", "Selecione uma foto do produto!", "error");
+        return;
+    }
+
+    // Feedback visual para o lojista
+    const btn = e.target.querySelector('button');
+    const originalText = btn.innerText;
+    btn.innerText = "Processando arquivo...";
+    btn.disabled = true;
+
+    try {
+        // 1. Upload para o Storage 'pods'
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+        
+        const { data: uploadData, error: uploadError } = await supabaseClient.storage
+            .from('pods')
+            .upload(fileName, file);
+
+        if (uploadError) throw uploadError;
+
+        // 2. Obter URL pública
+        const { data: publicUrlData } = supabaseClient.storage.from('pods').getPublicUrl(fileName);
+        const publicUrl = publicUrlData.publicUrl;
+
+        // 3. Inserir dados no banco
+        const { error: insertError } = await supabaseClient.from('pods_products').insert([{ 
+            name: sanitizeInput(document.getElementById('prod-name').value), 
+            puffs: parseInt(document.getElementById('prod-puffs').value), 
+            price: parseFloat(document.getElementById('prod-price').value), 
+            stock: parseInt(document.getElementById('prod-stock').value), 
+            flavors: document.getElementById('prod-flavors').value.split(',').map(f => f.trim()), 
+            image: publicUrl, // Link que criamos acima
+            company_id: currentUser.company_id 
+        }]);
+
+        if (insertError) throw insertError;
+
+        showPremiumNotification("Sucesso", "Produto publicado!", "success");
+        document.getElementById('product-form').reset();
+    } catch (err) {
+        console.error("Erro ao salvar produto:", err);
+        showPremiumNotification("Erro", "Falha ao publicar. Verifique as permissões do Storage.", "error");
+    } finally {
+        btn.innerText = originalText;
+        btn.disabled = false;
+    }
 }
 async function renderAdminClientsManager() {
     const container = document.getElementById('admin-clients-container'); container.innerHTML = '';

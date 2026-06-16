@@ -9,6 +9,8 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M10 5C9.5 3.5 10.5 2 11.5 2C12.5 2 12 3.5 11.5 4.5C11 5.5 11.5 6.5 12.5 6.5' stroke='%237928CA' stroke-width='1.5' stroke-linecap='round'/><path d='M7 10C7 8.89543 7.89543 8 9 8H14C15.1046 8 16 8.89543 16 10V20C16 21.1046 15.1046 22 14 22H9C7.89543 22 7 21.1046 7 20V10Z' stroke='%2300DFD8' stroke-width='2'/><path d='M10 8V6.5C10 6.22386 10.2239 6 10.5 6H12.5C12.7761 6 13 6.22386 13 6.5V8' stroke='%23FF5252' stroke-width='2'/></svg>">
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#00DFD8">
 </head>
 <body>
 
@@ -156,13 +158,19 @@
                 <div class="admin-form">
                     <h3>Expandir Acervo</h3>
                     <form id="product-form" onsubmit="saveProduct(event)">
-                        <div class="form-group"><label>Designação do Produto</label><input type="text" id="prod-name" placeholder="Ex: Ignite V50" required></div>
-                        <div class="form-group"><label>Puffs Estimados</label><input type="number" id="prod-puffs" placeholder="Ex: 5000" required></div>
-                        <div class="form-group"><label>Valor de Venda (R$)</label><input type="number" step="0.01" id="prod-price" placeholder="Ex: 90.00" required></div>
-                        <div class="form-group"><label>Sabores (Separados por vírgula)</label><input type="text" id="prod-flavors" placeholder="Ex: Melancia, Menta" required></div>
-                        <div class="form-group"><label>Volume em Estoque</label><input type="number" id="prod-stock" placeholder="Ex: 10" required></div>
-                        <button type="submit" class="buy-btn-premium">Publicar na Minha Vitrine</button>
-                    </form>
+    <div class="form-group"><label>Designação do Produto</label><input type="text" id="prod-name" placeholder="Ex: Ignite V50" required></div>
+    <div class="form-group"><label>Puffs Estimados</label><input type="number" id="prod-puffs" placeholder="Ex: 5000" required></div>
+    <div class="form-group"><label>Valor de Venda (R$)</label><input type="number" step="0.01" id="prod-price" placeholder="Ex: 90.00" required></div>
+    <div class="form-group"><label>Sabores (Ex: Melancia, Menta)</label><input type="text" id="prod-flavors" placeholder="Ex: Melancia, Menta" required></div>
+    <div class="form-group"><label>Volume em Estoque</label><input type="number" id="prod-stock" placeholder="Ex: 10" required></div>
+    
+    <div class="form-group">
+        <label>Foto do Produto (Alta Qualidade)</label>
+        <input type="file" id="prod-image-file" accept="image/*" required style="background:transparent; border:1px solid var(--border); padding:10px; color:#fff;">
+    </div>
+    
+    <button type="submit" class="buy-btn-premium">Publicar na Minha Vitrine</button>
+</form>
                 </div>
                 <div>
                     <h3>Controle de Inventário</h3>
