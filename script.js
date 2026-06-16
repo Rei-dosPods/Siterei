@@ -74,6 +74,45 @@ function getCookie(name) {
 
 function deleteCookie(name) { document.cookie = name + "=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"; }
 
+// ====================================================
+// 🚨 SISTEMA FORÇADO DE VERIFICAÇÃO DE NOTIFICAÇÕES
+// ====================================================
+async function verificarEForcarPermissaoNotificacao() {
+    // Só faz sentido pedir e avisar se for um cliente final acessando
+    if (!currentUser || currentUser.role !== 'client') return;
+
+    if ('Notification' in window) {
+        // Se ainda não aceitou nem bloqueou (está no estado padrão)
+        if (Notification.permission === 'default') {
+            
+            // Exibe um aviso premium customizado na tela explicando a importância vital
+            showPremiumNotification(
+                "📢 ATENÇÃO: Habilite as Notificações", 
+                "Para garantir que seu pedido chegue rápido, permita as notificações a seguir. Caso não aceite, você poderá ter sérios problemas com o recebimento e rastreio da sua entrega devido à falta de comunicação em tempo real!", 
+                "error" // Usa estilo de alerta/atenção
+            );
+
+            // Aguarda 3.5 segundos para o cliente ler o aviso e então dispara o pop-up nativo do navegador
+            setTimeout(async () => {
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') {
+                    showPremiumNotification("🔄 Conexão Ativada", "Notificações sincronizadas com sucesso. Seu frete está seguro!", "success");
+                    inicializarNotificacoesPush(currentUser.phone);
+                }
+            }, 3500);
+        } 
+        // Caso ele já tenha bloqueado anteriormente, avisa o perigo na tela
+        else if (Notification.permission === 'denied') {
+            console.warn("⚠️ O usuário bloqueou as notificações anteriormente.");
+            showPremiumNotification(
+                "⚠️ Alerta de Rastreamento", 
+                "Você bloqueou as notificações do site. Lembramos que isso pode causar falhas e atrasos na sua entrega devido à total falta de comunicação com o entregador. Ative manualmente nas configurações do seu navegador se necessário.", 
+                "error"
+            );
+        }
+    }
+}
+
 window.onload = function() {
     const savedUserCookie = getCookie('logged_user');
     if(savedUserCookie) {
@@ -216,7 +255,9 @@ async function logUserIn(user) {
     } else {
         titleDisp.innerText = "PODS STORE"; subtDisp.innerText = "Catálogo Exclusivo Privado";
         switchView('loja');
-        inicializarNotificacoesPush(user.phone);
+        
+        // 🚀 GATILHO COMPORTAMENTAL: Executa a checagem forçada assim que o cliente entra
+        verificarEForcarPermissaoNotificacao();
     }
     fetchStoreStatusInitial(); 
     setupRealtimeListeners(); 
@@ -236,9 +277,10 @@ function handleLogout() {
 async function inicializarNotificacoesPush(userPhone) {
     if ('serviceWorker' in navigator) {
         try {
-            const registration = await navigator.serviceWorker.register('/sw.js');
-            const permission = await Notification.requestPermission();
-            if (permission === 'granted') {
+            const registration = await navigator.serviceWorker.getRegistration();
+            if (!registration) return;
+            
+            if (Notification.permission === 'granted') {
                 if (!window.firebase) await carregarBibliotecasFirebase();
 
                 const config = {
@@ -296,9 +338,6 @@ async function toggleStoreStatus() {
     await supabaseClient.from('store_status').update({ is_open: novoEstado }).eq('id', 1);
 }
 
-// ====================================================
-// 🎛️ CENTRAL DE ESCUTA EM TEMPO REAL COM SIRENE AUDIO
-// ====================================================
 function setupRealtimeListeners() {
     if (!supabaseClient) return;
     if (realtimeChannel) supabaseClient.removeChannel(realtimeChannel);
@@ -307,7 +346,6 @@ function setupRealtimeListeners() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pods_orders' }, (payload) => {
         const active = document.querySelector('.view-section.active');
         
-        // 🚨 DISPARO DA SIRENE EM TEMPO REAL SE O PEDIDO FOR DA NOSSA EMPRESA!
         if (payload.eventType === 'INSERT') {
             if (currentUser && payload.new.company_id === currentUser.company_id) {
                 tocarAlertaSonoroPedido();
@@ -461,7 +499,7 @@ async function executeOrderCheckoutProcess() {
         status: isStoreOpenGlobal ? 'recebido' : 'fechado', company_id: currentUser.company_id
     }]);
 
-    showPremiumNotification("Faturamento Completo", "Seu pedido foi sincronizado no painel da loja.", "success");
+    showPremiumNotification("Faturamento Completo", "Seu pedido foi synchronized no painel da loja.", "success");
     closeModal(); fetchAndRenderStore();
 }
 
@@ -503,9 +541,6 @@ async function renderClientHistory() {
     });
 }
 
-// ====================================================
-// 🏬 VISÃO DO LOJISTA (ESTEIRA DE PRODUÇÃO COMPLETA)
-// ====================================================
 async function renderAdminOrders() {
     const container = document.getElementById('orders-container');
     const { data: orders } = await supabaseClient.from('pods_orders').select('*').eq('company_id', currentUser.company_id).order('id', { ascending: false });
@@ -609,9 +644,6 @@ async function renderAdminClientsManager() {
     if(users) users.forEach(u => { container.innerHTML += `<div class="client-profile-card"><h4>👥 ${u.name}</h4><p>WhatsApp: ${u.phone}</p></div>`; });
 }
 
-// ====================================================
-// 👑 VISÃO MASTER DO SUPER ADM (VOCÊ)
-// ====================================================
 async function saveNewCompanyMaster(e) {
     e.preventDefault();
     const name = sanitizeInput(document.getElementById('comp-name').value);
