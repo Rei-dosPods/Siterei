@@ -3,17 +3,19 @@ const SUPABASE_URL = "https://wcjzrdovqnyytveospck.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndjanpyZG92cW55eXR2ZW9zcGNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExOTExNDcsImV4cCI6MjA5Njc2NzE0N30.cSXeFxYnD24yNP-zIlhIONLsHx-oVDRg8OI9aSEL7oY";
 
 const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+window.supabaseClient = supabaseClient;
 
-let currentUser = null;
+let currentUser = null; // Guarda: user_id, name, phone, role ('client', 'vendor', 'superadmin'), company_id, delivery_fee
+let currentCompanyData = null; // Informações da loja logada ou da loja do cliente
 let authMode = "login";
 let selectedFlavor = null;
 let currentProductFile = null; 
 let openedProductData = null;
 let globalProductsCache = []; 
 let currentCategoryFilter = "all";
-const TAXA_FRETE = 10.00;
 
-// Variável Global de Status de Expediente
+// Controle global do Chat Ativo e expediente
+let activeChatOrderId = null;
 let isStoreOpenGlobal = true;
 
 // Variáveis de controle para o Hold Trigger
@@ -21,81 +23,117 @@ let holdTimer = null;
 let holdProgress = 0;
 const HOLD_DURATION = 1500; 
 
-// Canal de escuta Realtime global
 let realtimeChannel = null;
 
+// ====================================================
+// 🎵 MOTOR DE ÁUDIO NATIVO (SIRENE INSTANTÂNEA)
+// ====================================================
+function tocarAlertaSonoroPedido() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Oscilador 1 (Tom Principal)
+        const oscilador1 = audioCtx.createOscillator();
+        const ganho1 = audioCtx.createGain();
+        oscilador1.type = 'sine';
+        oscilador1.frequency.setValueAtTime(880, audioCtx.currentTime); // Nota Lá (Aguda)
+        
+        ganho1.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        oscilador1.connect(ganho1);
+        ganho1.connect(audioCtx.destination);
+        
+        oscilador1.start();
+        oscilador1.stop(audioCtx.currentTime + 1.2);
+        
+        console.log("🔔 [AUDIO ENGINE] Alerta sonoro disparado com sucesso!");
+    } catch (e) {
+        console.error("Erro ao reproduzir som de alerta:", e);
+    }
+}
+
+// ====================================================
+// 🍪 COOKIES ENGINE
+// ====================================================
+function setCookie(name, value, days = 7) {
+    const d = new Date();
+    d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+    const expires = "expires=" + d.toUTCString();
+    document.cookie = name + "=" + encodeURIComponent(value) + ";" + expires + ";path=/;SameSite=Strict";
+}
+
+function getCookie(name) {
+    const cname = name + "=";
+    const decodedCookie = decodeURIComponent(document.cookie);
+    const ca = decodedCookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+        let c = ca[i].trim();
+        if (c.indexOf(cname) == 0) return c.substring(cname.length, c.length);
+    }
+    return "";
+}
+
+function deleteCookie(name) { document.cookie = name + "=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"; }
+
 window.onload = function() {
-    const savedUser = sessionStorage.getItem('logged_user');
-    if(savedUser) {
-        currentUser = JSON.parse(savedUser);
+    const savedUserCookie = getCookie('logged_user');
+    if(savedUserCookie) {
+        currentUser = JSON.parse(savedUserCookie);
         logUserIn(currentUser);
     }
-    
-    const selectPromo = document.getElementById('prod-promo');
-    if(selectPromo) {
-        selectPromo.addEventListener('change', function(e) {
-            document.getElementById('group-promo-price').style.display = e.target.value === 'sim' ? 'block' : 'none';
-        });
-    }
-
-    const fileInput = document.getElementById('prod-image');
-    if(fileInput) {
-        fileInput.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if(file) { currentProductFile = file; }
-        });
-    }
-
     setupHoldToBuyButton();
 }
 
 function sanitizeInput(text) {
     if (typeof text !== 'string') return text;
-    return text
-        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;").replace(/'/g, "&#x27;").replace(/\//g, "&#x2F;");
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
 }
 
 function showPremiumNotification(title, message, type = "success") {
     const modal = document.getElementById('notification-modal');
     const cardBox = document.getElementById('notification-card-box');
     const icon = document.getElementById('notification-icon');
-    
     if(!modal || !cardBox || !icon) return;
-
     document.getElementById('notification-title').innerText = title;
     document.getElementById('notification-message').innerText = message;
-
-    cardBox.className = "alert-popup animate-fade-in";
-
-    if(type === "success") {
-        cardBox.classList.add('success-alert');
-        icon.innerText = "✓";
-    } else {
-        cardBox.classList.add('error-alert');
-        icon.innerText = "✕";
-    }
-
+    cardBox.className = "alert-popup animate-fade-in " + (type === "success" ? "success-alert" : "error-alert");
+    icon.innerText = type === "success" ? "✓" : "✕";
     modal.setAttribute("style", "display: flex !important;");
 }
 
-function closeNotificationModal() {
-    const modal = document.getElementById('notification-modal');
-    if(modal) modal.setAttribute("style", "display: none !important;");
-}
+function closeNotificationModal() { document.getElementById('notification-modal').style.display = 'none'; }
 
 function setAuthMode(mode) {
     authMode = mode;
     const btnLogin = document.getElementById('btn-mode-login');
     const btnRegister = document.getElementById('btn-mode-register');
+    
     if(mode === 'login') {
         btnLogin.classList.add('active'); btnRegister.classList.remove('active');
         document.getElementById('group-auth-name').style.display = 'none';
-        document.getElementById('auth-submit-btn').innerText = "Acessar Clube";
+        
+        const vipField = document.getElementById('group-vip-field');
+        if(vipField) {
+            vipField.style.display = 'none';
+            const vipInput = document.getElementById('auth-vip-code');
+            if(vipInput) vipInput.removeAttribute('required');
+        }
+        document.getElementById('auth-submit-btn').innerText = "Acessar Hub";
     } else {
         btnRegister.classList.add('active'); btnLogin.classList.remove('active');
         document.getElementById('group-auth-name').style.display = 'block';
-        document.getElementById('auth-submit-btn').innerText = "Requisitar Conta";
+        
+        let vipField = document.getElementById('group-vip-field');
+        if(!vipField) {
+            const div = document.createElement('div');
+            div.className = 'form-group'; div.id = 'group-vip-field';
+            div.innerHTML = `<label>Código de Indicação da Loja</label><input type="text" id="auth-vip-code" placeholder="Insira o código fornecido pelo lojista" required>`;
+            document.getElementById('auth-form').insertBefore(div, document.getElementById('auth-submit-btn'));
+        } else { 
+            vipField.style.display = 'block';
+            const vipInput = document.getElementById('auth-vip-code');
+            if(vipInput) vipInput.setAttribute('required', 'required');
+        }
+        document.getElementById('auth-submit-btn').innerText = "Criar Minha Conta";
     }
 }
 
@@ -105,519 +143,400 @@ async function handleAuth(e) {
     const passwordInput = document.getElementById('auth-password').value;
 
     if (phoneInput === '404' && passwordInput === '24032008') {
-        currentUser = { name: "Administrador (Rei)", phone: "404", role: "admin" };
-        sessionStorage.setItem('logged_user', JSON.stringify(currentUser));
+        currentUser = { name: "CEO Master", phone: "404", role: "superadmin", company_id: null, delivery_fee: 0 };
+        setCookie('logged_user', JSON.stringify(currentUser), 7);
         logUserIn(currentUser);
-        showPremiumNotification("Acesso Real", "Bem-vindo de volta, Majestade.", "success");
-        return;
-    }
-
-    if (phoneInput === '404' || phoneInput === 'Rei' || phoneInput === '123' || passwordInput === '24032008' || passwordInput === 'admin') {
-        showPremiumNotification("Acesso Negado", "Credenciais administrativas inválidas.", "error");
+        showPremiumNotification("Modo Deus", "Painel de controle central de franquias liberado.", "success");
         return;
     }
 
     if (authMode === 'login') {
-        const { data: userFound } = await supabaseClient.from('pods_users').select('*').eq('phone', phoneInput).eq('password', passwordInput).single();
-        if (userFound) {
-            currentUser = { name: userFound.name, phone: userFound.phone, role: "client" };
-            sessionStorage.setItem('logged_user', JSON.stringify(currentUser));
+        const { data: vendorStore } = await supabaseClient.from('pods_companies').select('*').eq('phone_adm', phoneInput).eq('password_adm', passwordInput).maybeSingle();
+        if(vendorStore) {
+            if(vendorStore.status === 'blocked') {
+                showPremiumNotification("Acesso Bloqueado", "Sua mensalidade de R$50,00 está vencida. Fale com o suporte master.", "error");
+                return;
+            }
+            currentUser = { name: vendorStore.name, phone: phoneInput, role: "vendor", company_id: vendorStore.id, delivery_fee: vendorStore.delivery_fee };
+            setCookie('logged_user', JSON.stringify(currentUser), 7);
             logUserIn(currentUser);
-        } else { 
-            showPremiumNotification("Falha no Acesso", "O telefone digitado ou a senha estão incorretos.", "error");
-        }
-    } else {
-        const nameInput = sanitizeInput(document.getElementById('auth-name').value.trim());
-        
-        if(nameInput.length < 2) {
-            showPremiumNotification("Dados Inválidos", "Por favor, insira um nome válido.", "error");
             return;
         }
 
-        const { data: existingUser } = await supabaseClient.from('pods_users').select('phone').eq('phone', phoneInput).maybeSingle();
-        if (existingUser) { 
-            showPremiumNotification("Aviso de Registro", "Este número de WhatsApp já possui um cadastro ativo.", "error");
-            return; 
+        const { data: userFound } = await supabaseClient.from('pods_users').select('*, pods_companies(status, name, delivery_fee)').eq('phone', phoneInput).eq('password', passwordInput).maybeSingle();
+        if (userFound) {
+            if(userFound.pods_companies && userFound.pods_companies.status === 'blocked') {
+                showPremiumNotification("Sistema Indisponível", "A loja vinculada a este convite está em manutenção.", "error");
+                return;
+            }
+            currentUser = { name: userFound.name, phone: userFound.phone, role: "client", company_id: userFound.company_id, delivery_fee: userFound.pods_companies.delivery_fee };
+            currentCompanyData = userFound.pods_companies;
+            setCookie('logged_user', JSON.stringify(currentUser), 7);
+            logUserIn(currentUser);
+        } else { 
+            showPremiumNotification("Falha no Acesso", "Credenciais incorretas ou loja inexistente.", "error");
+        }
+    } else {
+        const inviteCode = document.getElementById('auth-vip-code').value.trim();
+        const { data: targetCompany } = await supabaseClient.from('pods_companies').select('*').eq('invite_code', inviteCode).maybeSingle();
+        
+        if (!targetCompany || targetCompany.status === 'blocked') {
+            showPremiumNotification("Código Inválido", "Esta loja parceira não está credenciada ou foi suspensa.", "error");
+            return;
         }
 
-        const { error } = await supabaseClient.from('pods_users').insert([{ phone: phoneInput, name: nameInput, password: passwordInput }]);
+        const nameInput = sanitizeInput(document.getElementById('auth-name').value.trim());
+        const { data: existingUser } = await supabaseClient.from('pods_users').select('phone').eq('phone', phoneInput).maybeSingle();
+        if (existingUser) { showPremiumNotification("Aviso", "Este número de WhatsApp já possui cadastro ativo.", "error"); return; }
+
+        const { error } = await supabaseClient.from('pods_users').insert([{ phone: phoneInput, name: nameInput, password: passwordInput, company_id: targetCompany.id }]);
         if (!error) {
-            showPremiumNotification("Ficha Deferida!", `Seja bem-vindo, ${nameInput}! Seu acesso está liberado.`, "success");
-            currentUser = { name: nameInput, phone: phoneInput, role: "client" };
-            sessionStorage.setItem('logged_user', JSON.stringify(currentUser));
+            showPremiumNotification("Membro Registrado!", `Sua conta foi criada no ecossistema da ${targetCompany.name}.`, "success");
+            currentUser = { name: nameInput, phone: phoneInput, role: "client", company_id: targetCompany.id, delivery_fee: targetCompany.delivery_fee };
+            setCookie('logged_user', JSON.stringify(currentUser), 7);
             logUserIn(currentUser);
-        } else {
-            showPremiumNotification("Erro Operacional", "Não foi possível salvar os dados.", "error");
         }
     }
 }
 
-function logUserIn(user) {
+async function logUserIn(user) {
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('main-content').style.display = 'block';
     document.getElementById('user-display-name').innerText = user.name;
-    switchView('loja');
+
+    const titleDisp = document.getElementById('store-title-display');
+    const subtDisp = document.getElementById('store-vendor-subtitle');
+
+    if(user.role === 'superadmin') {
+        titleDisp.innerText = "HUB MESTRE"; subtDisp.innerText = "Gerenciamento Geral de Lojas";
+        switchView('super-companies');
+    } else if (user.role === 'vendor') {
+        titleDisp.innerText = user.name.toUpperCase(); subtDisp.innerText = "Painel Administrativo do Lojista";
+        switchView('admin');
+    } else {
+        titleDisp.innerText = "PODS STORE"; subtDisp.innerText = "Catálogo Exclusivo Privado";
+        switchView('loja');
+        inicializarNotificacoesPush(user.phone);
+    }
     fetchStoreStatusInitial(); 
     setupRealtimeListeners(); 
 }
 
 function handleLogout() {
     if (realtimeChannel) { supabaseClient.removeChannel(realtimeChannel); }
-    sessionStorage.removeItem('logged_user');
-    currentUser = null;
+    deleteCookie('logged_user'); currentUser = null;
     document.getElementById('main-content').style.display = 'none';
     document.getElementById('auth-screen').style.display = 'flex';
-    document.getElementById('auth-form').reset();
-    setAuthMode('login');
+    document.getElementById('auth-form').reset(); setAuthMode('login');
+}
+
+// ====================================================
+// 🔔 REGISTRO DO SERVICE WORKER E WEB PUSH
+// ====================================================
+async function inicializarNotificacoesPush(userPhone) {
+    if ('serviceWorker' in navigator) {
+        try {
+            const registration = await navigator.serviceWorker.register('/sw.js');
+            const permission = await Notification.requestPermission();
+            if (permission === 'granted') {
+                if (!window.firebase) await carregarBibliotecasFirebase();
+
+                const config = {
+                    apiKey: "AIzaSyDd7s3h6-TPleYJ590yKKCKalENyVwtCMg",
+                    authDomain: "rei-dos-pods.firebaseapp.com",
+                    projectId: "rei-dos-pods",
+                    storageBucket: "rei-dos-pods.firebasestorage.app",
+                    messagingSenderId: "763358246928",
+                    appId: "1:763358246928:web:ff3101060d43b737087295"
+                };
+
+                if (!firebase.apps.length) firebase.initializeApp(config);
+                const messaging = firebase.messaging();
+
+                const token = await messaging.getToken({
+                    serviceWorkerRegistration: registration,
+                    vapidKey: 'BJN313FYRPWo4rdGUyoJThln_8Yku22BNr50pisWcUyyGrWty43ySpvaBzESO4Cbpq-0nJidFZTTe-7p2HQ4jyk'
+                });
+
+                if (token) {
+                    await supabaseClient.from('pods_users').update({ push_token: token }).eq('phone', userPhone);
+                }
+            }
+        } catch (e) { console.error('Erro push engine:', e); }
+    }
+}
+
+function carregarBibliotecasFirebase() {
+    return new Promise((resolve) => {
+        const scriptApp = document.createElement('script'); scriptApp.src = "https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js";
+        document.head.appendChild(scriptApp);
+        scriptApp.onload = () => {
+            const scriptMsg = document.createElement('script'); scriptMsg.src = "https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js";
+            document.head.appendChild(scriptMsg); scriptMsg.onload = () => resolve();
+        };
+    });
 }
 
 function syncStoreStatusInterface(isOpen) {
     isStoreOpenGlobal = isOpen;
     const badge = document.getElementById('store-status-badge');
-    const btnToggle = document.getElementById('btn-toggle-store');
-
     if(badge) {
-        if(isOpen) {
-            badge.innerText = "Aberto";
-            badge.className = "status-badge-premium aberto";
-        } else {
-            badge.innerText = "Fechado";
-            badge.className = "status-badge-premium fechado";
-        }
-    }
-
-    if(btnToggle && currentUser && currentUser.role === 'admin') {
-        if(isOpen) {
-            btnToggle.innerText = "Fechar Loja (Mudar para Noite)";
-            btnToggle.style.background = "var(--danger)";
-        } else {
-            btnToggle.innerText = "Abrir Loja (Mudar para Dia)";
-            btnToggle.style.background = "var(--success)";
-        }
+        badge.innerText = isOpen ? "Aberto" : "Fechado";
+        badge.className = "status-badge-premium " + (isOpen ? "aberto" : "fechado");
     }
 }
 
 async function fetchStoreStatusInitial() {
     const { data } = await supabaseClient.from('store_status').select('is_open').eq('id', 1).single();
-    if(data) { syncStoreStatusInterface(data.is_open); }
+    if(data) syncStoreStatusInterface(data.is_open);
 }
 
 async function toggleStoreStatus() {
-    if(!currentUser || currentUser.role !== 'admin') return;
     const novoEstado = !isStoreOpenGlobal;
     await supabaseClient.from('store_status').update({ is_open: novoEstado }).eq('id', 1);
-    showPremiumNotification("Status Alterado", `A loja agora consta como ${novoEstado ? 'ABERTA' : 'FECHADA'} para todos.`, "success");
 }
 
+// ====================================================
+// 🎛️ CENTRAL DE ESCUTA EM TEMPO REAL COM SIRENE AUDIO
+// ====================================================
 function setupRealtimeListeners() {
     if (!supabaseClient) return;
-
-    if (realtimeChannel) { supabaseClient.removeChannel(realtimeChannel); }
+    if (realtimeChannel) supabaseClient.removeChannel(realtimeChannel);
 
     realtimeChannel = supabaseClient.channel('custom-all-channel')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pods_orders' }, (payload) => {
-        const activeSection = document.querySelector('.view-section.active');
-        if (!activeSection) return;
+        const active = document.querySelector('.view-section.active');
+        
+        // 🚨 DISPARO DA SIRENE EM TEMPO REAL SE O PEDIDO FOR DA NOSSA EMPRESA!
+        if (payload.eventType === 'INSERT') {
+            if (currentUser && payload.new.company_id === currentUser.company_id) {
+                tocarAlertaSonoroPedido();
+                showPremiumNotification("🚨 NOVO PEDIDO!", `Ordem #${payload.new.id} recebida! Toque para gerenciar.`, "success");
+            }
+        }
 
-        if (activeSection.id === 'view-admin' && currentUser.role === 'admin') {
-            renderAdminOrders(); 
-        } else if (activeSection.id === 'view-historico' && currentUser.role === 'client') {
-            renderClientHistory(); 
-        } else if (activeSection.id === 'view-clientes' && currentUser.role === 'admin') {
-            renderAdminClientsManager();
-        }
+        if (!active) return;
+        if (active.id === 'view-admin') renderAdminOrders();
+        else if (active.id === 'view-historico') renderClientHistory();
     })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'pods_products' }, (payload) => {
-        fetchAndRenderStore(); 
-        if (currentUser.role === 'admin' && document.querySelector('#view-gerenciar.active')) {
-            renderAdminInventoryManager();
-        }
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'pods_products' }, () => {
+        fetchAndRenderStore();
+        if (document.querySelector('#view-gerenciar.active')) renderAdminInventoryManager();
+        if (document.querySelector('#view-super-inventory.active')) renderSuperGlobalInventory();
     })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'store_status' }, (payload) => {
         syncStoreStatusInterface(payload.new.is_open);
     })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pods_messages' }, (payload) => {
+        if (document.getElementById('chat-modal').style.display === 'flex' && activeChatOrderId == payload.new.order_id) {
+            appendSingleMessageToChatUI(payload.new);
+        } else {
+            if (currentUser.role === 'vendor' && payload.new.sender === 'client') {
+                showPremiumNotification("Mensagem Recebida 💬", `Ordem #${payload.new.order_id}: ${payload.new.text.slice(0, 25)}`, "success");
+                tocarAlertaSonoroPedido();
+            } else if (currentUser.role === 'client' && payload.new.sender === 'admin') {
+                showPremiumNotification("Suporte da Loja 👑", payload.new.text.slice(0, 30), "success");
+            }
+        }
+    })
     .subscribe();
 }
 
-// 🛠️ FUNÇÃO TOTALMENTE CORRIGIDA SEM O UNDERLINE QUE FAZIA A TELA TRAVAR
 function switchView(view) {
-    if((view === 'admin' || view === 'gerenciar' || view === 'clientes') && (!currentUser || currentUser.role !== 'admin')) {
-        handleLogout();
-        showPremiumNotification("Violação de Escopo", "Tentativa de quebra de privilégios detectada.", "error");
-        return;
-    }
-
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
     
-    const adminNav = document.getElementById('admin-nav-tabs');
-    const clientNav = document.getElementById('client-nav-tabs');
-
-    if(currentUser.role === 'admin') {
-        adminNav.style.display = 'flex'; clientNav.style.display = 'none';
-        if(view === 'loja') {
-            const btnLojaAdm = document.getElementById('tab-adm-loja-btn');
-            if(btnLojaAdm) btnLojaAdm.classList.add('active');
-        }
-    } else {
-        adminNav.style.display = 'none'; clientNav.style.display = 'flex';
-        if(view === 'loja') {
-            const btnLojaCli = document.getElementById('tab-loja-btn');
-            if(btnLojaCli) btnLojaCli.classList.add('active');
-        }
-    }
+    document.getElementById('client-nav-tabs').style.display = currentUser.role === 'client' ? 'flex' : 'none';
+    document.getElementById('admin-nav-tabs').style.display = currentUser.role === 'vendor' ? 'flex' : 'none';
+    document.getElementById('super-nav-tabs').style.display = currentUser.role === 'superadmin' ? 'flex' : 'none';
 
     if(view === 'loja') { document.getElementById('view-loja').classList.add('active'); fetchAndRenderStore(); }
-    else if (view === 'historico') { const btnHist = document.getElementById('tab-historico-btn'); if(btnHist) btnHist.classList.add('active'); document.getElementById('view-historico').classList.add('active'); renderClientHistory(); }
-    else if (view === 'admin') { const btnAdm = document.getElementById('tab-admin-btn'); if(btnAdm) btnAdm.classList.add('active'); document.getElementById('view-admin').classList.add('active'); renderAdminOrders(); syncStoreStatusInterface(isStoreOpenGlobal); }
-    else if (view === 'gerenciar') { const btnGer = document.getElementById('tab-gerenciar-btn'); if(btnGer) btnGer.classList.add('active'); document.getElementById('view-gerenciar').classList.add('active'); renderAdminInventoryManager(); }
-    else if (view === 'clientes') { const btnCli = document.getElementById('tab-clientes-btn'); if(btnCli) btnCli.classList.add('active'); document.getElementById('view-clientes').classList.add('active'); renderAdminClientsManager(); }
+    else if (view === 'historico') { document.getElementById('view-historico').classList.add('active'); renderClientHistory(); }
+    else if (view === 'admin') { document.getElementById('view-admin').classList.add('active'); renderAdminOrders(); }
+    else if (view === 'gerenciar') { document.getElementById('view-gerenciar').classList.add('active'); renderAdminInventoryManager(); }
+    else if (view === 'clientes') { document.getElementById('view-clientes').classList.add('active'); renderAdminClientsManager(); }
+    else if (view === 'super-companies') { document.getElementById('view-super-companies').classList.add('active'); renderSuperCompaniesManager(); }
+    else if (view === 'super-inventory') { document.getElementById('view-super-inventory').classList.add('active'); renderSuperGlobalInventory(); }
 }
 
 async function fetchAndRenderStore() {
     const containerGeral = document.getElementById('products-container-client');
-    if(containerGeral && containerGeral.innerHTML === '') containerGeral.innerHTML = '<p style="color:var(--text-muted)">Sincronizando vitrine...</p>';
-
-    const { data: products } = await supabaseClient.from('pods_products').select('*').order('name', { ascending: true });
+    if(!containerGeral) return;
+    
+    let targetCompanyId = currentUser.company_id;
+    const { data: products } = await supabaseClient.from('pods_products').select('*').eq('company_id', targetCompanyId).order('name', { ascending: true });
     if(!products) return;
-
-    globalProductsCache = products; 
-    filterStoreData(); 
+    globalProductsCache = products;
+    filterStoreData();
 }
 
 function filterStoreData() {
     const query = document.getElementById('store-search-input').value.toLowerCase().trim();
     const containerGeral = document.getElementById('products-container-client');
-    const containerOfertas = document.getElementById('products-container-deals');
-    const dealsSection = document.getElementById('deals-section');
-
     if(!containerGeral) return;
-
     containerGeral.innerHTML = '';
-    if(containerOfertas) containerOfertas.innerHTML = '';
-    
-    let temOferta = false;
-    let visiveisGeral = 0;
 
     globalProductsCache.forEach(p => {
-        const bateNome = p.name.toLowerCase().includes(query);
-        let bateCategoria = true;
-        if(currentCategoryFilter === 'low') bateCategoria = p.puffs <= 4000;
-        else if (currentCategoryFilter === 'high') bateCategoria = p.puffs > 4000;
-
-        if(bateNome && bateCategoria) {
-            visiveisGeral++;
-            let isAvailable = p.stock > 0;
-            let stockText = p.stock >= 2 ? "Disponível" : (p.stock === 1 ? "Último!" : "Esgotado");
-            let badgeClass = p.stock >= 2 ? "stock-badge available" : "stock-badge";
-
+        if(p.name.toLowerCase().includes(query)) {
+            let htmlPreco = `R$ ${p.price.toFixed(2)}`;
             const estiloImagem = p.image ? `style="background-image: url('${p.image}');"` : '';
-            let htmlPreco = p.is_promo ? `<span class="old-price">R$ ${p.price}</span>R$ ${p.promo_price}` : `R$ ${p.price}`;
-            let htmlPromoBadge = p.is_promo ? `<span class="promo-badge">Sale</span>` : '';
-
-            const cardHTML = `
+            containerGeral.innerHTML += `
                 <div class="product-card" onclick="openDetailsModal(${p.id})">
-                    ${htmlPromoBadge}
-                    <div class="product-img" ${estiloImagem}>${p.image ? '' : 'NO IMG'}</div>
+                    <div class="product-img" ${estiloImagem}></div>
                     <h3 class="product-title">${p.name}</h3>
                     <p class="product-info">💨 ${p.puffs} Puffs</p>
-                    <span class="${badgeClass}">${stockText}</span>
+                    <span class="stock-badge available">${p.stock > 0 ? 'Disponível ('+p.stock+')' : 'Esgotado'}</span>
                     <div class="price-tag" style="margin-top:10px;">${htmlPreco}</div>
                 </div>`;
-
-            containerGeral.innerHTML += cardHTML;
-
-            if(p.is_promo && isAvailable && containerOfertas) {
-                containerOfertas.innerHTML += cardHTML;
-                temOferta = true;
-            }
         }
     });
-
-    if(dealsSection) dealsSection.style.display = (temOferta && query === "") ? 'block' : 'none';
-    if(visiveisGeral === 0) containerGeral.innerHTML = '<p style="color:var(--text-muted); grid-column: 1/-1; text-align:center; padding:20px;">Nenhum dispositivo localizado.</p>';
 }
 
-function setCategoryFilter(category) {
-    currentCategoryFilter = category;
-    document.querySelectorAll('.category-pill').forEach(pill => pill.classList.remove('active'));
-    
-    if(category === 'all') document.getElementById('pill-cat-all').classList.add('active');
-    else if(category === 'low') document.getElementById('pill-cat-low').classList.add('active');
-    else if(category === 'high') document.getElementById('pill-cat-high').classList.add('active');
-
-    filterStoreData(); 
-}
+function setCategoryFilter(cat) { currentCategoryFilter = cat; filterStoreData(); }
 
 async function openDetailsModal(productId) {
     const { data: product } = await supabaseClient.from('pods_products').select('*').eq('id', productId).single();
     if(!product) return;
-
     openedProductData = product;
-
     document.getElementById('details-modal-title').innerText = product.name;
-    document.getElementById('details-modal-puffs').innerText = `💨 Autonomia Estimada: ${product.puffs} Puffs`;
-    
-    const divImg = document.getElementById('details-modal-img');
-    if(product.image) divImg.style.backgroundImage = `url('${product.image}')`;
-    else divImg.style.backgroundImage = 'none';
-
-    let htmlPreco = product.is_promo ? `<span class="old-price" style="font-size:16px;">R$ ${product.price}</span> R$ ${product.promo_price}` : `R$ ${product.price}`;
-    document.getElementById('details-modal-price').innerHTML = htmlPreco;
-
-    const flavorsDiv = document.getElementById('details-modal-flavors');
-    flavorsDiv.innerHTML = '';
+    document.getElementById('details-modal-puffs').innerText = `💨 Autonomia: ${product.puffs} Puffs`;
+    document.getElementById('details-modal-price').innerText = `R$ ${product.price.toFixed(2)}`;
+    const flavorsDiv = document.getElementById('details-modal-flavors'); flavorsDiv.innerHTML = '';
     product.flavors.forEach(f => { flavorsDiv.innerHTML += `<button type="button" class="flavor-btn">${f}</button>`; });
-
-    const actionBtn = document.getElementById('details-action-btn');
-    if(product.stock > 0) {
-        actionBtn.innerText = "Avançar para o Pedido";
-        actionBtn.disabled = false;
-        actionBtn.onclick = function() { closeDetailsModal(); openBuyModal(product); };
-    } else {
-        actionBtn.innerText = "Dispositivo Esgotado";
-        actionBtn.disabled = true;
-    }
-
     document.getElementById('details-modal').style.display = 'flex';
+    document.getElementById('details-action-btn').onclick = () => { closeDetailsModal(); openBuyModal(product); };
 }
 
 function closeDetailsModal() { document.getElementById('details-modal').style.display = 'none'; }
 
 function openBuyModal(product) {
-    currentSelectedProductId = product.id;
-    selectedFlavor = null;
-    resetHoldButton(); 
-
+    selectedFlavor = null; resetHoldButton();
     const warningBox = document.getElementById('checkout-closed-warning');
-    if(warningBox) { warningBox.style.display = isStoreOpenGlobal ? 'none' : 'block'; }
-
-    const buttonsContainer = document.getElementById('flavor-buttons-container');
-    buttonsContainer.innerHTML = '';
-    product.flavors.forEach(f => {
-        buttonsContainer.innerHTML += `<button type="button" class="flavor-btn" onclick="selectFlavorBtn(this, '${f}')">${f}</button>`;
-    });
-
-    const precoBase = product.is_promo ? Number(product.promo_price) : Number(product.price);
-    document.getElementById('summary-prod-price').innerText = `R$ ${precoBase.toFixed(2)}`;
-    document.getElementById('summary-total-price').innerText = `R$ ${(precoBase + TAXA_FRETE).toFixed(2)}`;
+    if(warningBox) warningBox.style.display = isStoreOpenGlobal ? 'none' : 'block';
+    const buttonsContainer = document.getElementById('flavor-buttons-container'); buttonsContainer.innerHTML = '';
+    product.flavors.forEach(f => { buttonsContainer.innerHTML += `<button type="button" class="flavor-btn" onclick="selectFlavorBtn(this, '${f}')">${f}</button>`; });
+    
+    document.getElementById('summary-prod-price').innerText = `R$ ${product.price.toFixed(2)}`;
+    document.getElementById('summary-delivery-price').innerText = `R$ ${currentUser.delivery_fee.toFixed(2)}`;
+    document.getElementById('summary-total-price').innerText = `R$ ${(product.price + currentUser.delivery_fee).toFixed(2)}`;
     document.getElementById('buy-modal').style.display = 'flex';
 }
 
-function selectFlavorBtn(element, flavorName) {
-    document.querySelectorAll('#flavor-buttons-container .flavor-btn').forEach(btn => btn.classList.remove('selected'));
-    element.classList.add('selected');
-    selectedFlavor = flavorName;
+function selectFlavorBtn(el, f) {
+    document.querySelectorAll('#flavor-buttons-container .flavor-btn').forEach(b => b.classList.remove('selected'));
+    el.classList.add('selected'); selectedFlavor = f;
 }
 
-function closeModal() { document.getElementById('buy-modal').style.display = 'none'; selectedFlavor = null; resetHoldButton(); }
+function closeModal() { document.getElementById('buy-modal').style.display = 'none'; }
 
 function setupHoldToBuyButton() {
-    const trigger = document.getElementById('btn-hold-trigger');
-    if(!trigger) return;
-
-    trigger.addEventListener('touchstart', startHolding, { passive: true });
-    trigger.addEventListener('touchend', stopHolding);
-    trigger.addEventListener('mousedown', startHolding);
-    trigger.addEventListener('mouseup', stopHolding);
-    trigger.addEventListener('mouseleave', stopHolding);
+    const trigger = document.getElementById('btn-hold-trigger'); if(!trigger) return;
+    trigger.addEventListener('touchstart', startHolding, { passive: true }); trigger.addEventListener('touchend', stopHolding);
+    trigger.addEventListener('mousedown', startHolding); trigger.addEventListener('mouseup', stopHolding);
 }
 
-function startHolding(e) {
-    if(!selectedFlavor) {
-        alert("Por favor, selecione uma essência/sabor clicando nos botões acima.");
-        stopHolding();
-        return;
-    }
-    if(document.getElementById('client-address').value.trim() === "") return;
-
-    const fillBar = document.getElementById('hold-progress-fill');
-    const btnLabel = document.getElementById('hold-btn-label');
-    
-    btnLabel.innerText = "Mantendo pressionado...";
-    holdProgress = 0;
-
-    clearInterval(holdTimer);
+function startHolding() {
+    if(!selectedFlavor || document.getElementById('client-address').value.trim() === "") return;
+    const fillBar = document.getElementById('hold-progress-fill'); const btnLabel = document.getElementById('hold-btn-label');
+    btnLabel.innerText = "Faturando ordem..."; holdProgress = 0; clearInterval(holdTimer);
     holdTimer = setInterval(() => {
-        holdProgress += (100 / (HOLD_DURATION / 50)); 
-        if (holdProgress >= 100) {
-            holdProgress = 100;
-            fillBar.style.width = '100%';
-            clearInterval(holdTimer);
-            executeOrderCheckoutProcess(); 
-        } else {
-            fillBar.style.width = holdProgress + '%';
-        }
+        holdProgress += 4;
+        if (holdProgress >= 100) { fillBar.style.width = '100%'; clearInterval(holdTimer); executeOrderCheckoutProcess(); } 
+        else { fillBar.style.width = holdProgress + '%'; }
     }, 50);
 }
 
-function stopHolding() {
-    clearInterval(holdTimer);
-    if(holdProgress < 100) resetHoldButton();
-}
-
-function resetHoldButton() {
-    const fillBar = document.getElementById('hold-progress-fill');
-    const btnLabel = document.getElementById('hold-btn-label');
-    if(fillBar) fillBar.style.width = '0%';
-    if(btnLabel) btnLabel.innerText = "Segure para Confirmar Ordem";
-    holdProgress = 0;
-}
+function stopHolding() { clearInterval(holdTimer); if(holdProgress < 100) resetHoldButton(); }
+function resetHoldButton() { document.getElementById('hold-progress-fill').style.width = '0%'; document.getElementById('hold-btn-label').innerText = "Segure para Confirmar Ordem"; }
 
 async function executeOrderCheckoutProcess() {
-    const { data: prod } = await supabaseClient.from('pods_products').select('*').eq('id', currentSelectedProductId).single();
-    if(!prod || prod.stock <= 0) { 
-        showPremiumNotification("Item Esgotado", "O estoque deste pod acabou.", "error");
-        closeModal(); fetchAndRenderStore(); return; 
-    }
-
-    await supabaseClient.from('pods_products').update({ stock: prod.stock - 1 }).eq('id', currentSelectedProductId);
+    const prod = openedProductData;
+    await supabaseClient.from('pods_products').update({ stock: prod.stock - 1 }).eq('id', prod.id);
     const address = sanitizeInput(document.getElementById('client-address').value);
-    const precoFinal = prod.is_promo ? Number(prod.promo_price) : Number(prod.price);
-
-    const statusInicialDaOrdem = isStoreOpenGlobal ? 'recebido' : 'fechado';
-
+    
     await supabaseClient.from('pods_orders').insert([{
         client_name: currentUser.name, client_phone: currentUser.phone, client_address: address,
-        product_name: prod.name, flavor: selectedFlavor, product_price: precoFinal,
-        delivery_price: TAXA_FRETE, total_price: precoFinal + TAXA_FRETE,
-        status: statusInicialDaOrdem, wait_time: ''
+        product_name: prod.name, flavor: selectedFlavor, product_price: prod.price,
+        delivery_price: currentUser.delivery_fee, total_price: prod.price + currentUser.delivery_fee,
+        status: isStoreOpenGlobal ? 'recebido' : 'fechado', company_id: currentUser.company_id
     }]);
 
-    const mensagemSucesso = isStoreOpenGlobal 
-        ? "Seu pedido foi faturado e já acendeu no painel mestre." 
-        : "Loja Fechada! Seu pedido foi agendado e será confirmado na abertura.";
-
-    showPremiumNotification("Ordem Sincronizada!", mensagemSucesso, "success");
-    closeModal();
-    fetchAndRenderStore();
+    showPremiumNotification("Faturamento Completo", "Seu pedido foi sincronizado no painel da loja.", "success");
+    closeModal(); fetchAndRenderStore();
 }
+
+async function openChatBoxModal(orderId) {
+    activeChatOrderId = orderId;
+    document.getElementById('chat-modal').style.display = 'flex';
+    const { data: messages } = await supabaseClient.from('pods_messages').select('*').eq('order_id', orderId).order('id', { ascending: true });
+    const body = document.getElementById('chat-messages-body'); body.innerHTML = '';
+    if(messages) messages.forEach(msg => appendSingleMessageToChatUI(msg));
+}
+
+function appendSingleMessageToChatUI(msg) {
+    const body = document.getElementById('chat-messages-body'); if(!body) return;
+    const isMe = (currentUser.role !== 'client' && msg.sender === 'admin') || (currentUser.role === 'client' && msg.sender === 'client');
+    body.innerHTML += `<div class="chat-bubble ${isMe ? 'me' : 'other'}">${msg.text}</div>`;
+    body.scrollTop = body.scrollHeight; 
+}
+
+async function handleSendChatMessage(e) {
+    e.preventDefault(); const field = document.getElementById('chat-input-field'); const txt = sanitizeInput(field.value.trim());
+    if(!txt) return; field.value = '';
+    await supabaseClient.from('pods_messages').insert([{ order_id: activeChatOrderId, sender: currentUser.role === 'client' ? 'client' : 'admin', text: txt, company_id: currentUser.company_id }]);
+}
+
+function closeChatModal() { document.getElementById('chat-modal').style.display = 'none'; activeChatOrderId = null; }
 
 async function renderClientHistory() {
     const container = document.getElementById('client-orders-container');
-    
-    const { data: activeOrders } = await supabaseClient.from('pods_orders').select('*').eq('client_phone', currentUser.phone);
-    const { data: completedOrders } = await supabaseClient.from('pods_history').select('*').eq('client_phone', currentUser.phone);
-
-    const totalOrders = [...(activeOrders || []), ...(completedOrders || [])];
-    if(totalOrders.length === 0) { container.innerHTML = '<p style="color:var(--text-muted);">Sem ordens ativas ou finalizadas.</p>'; return; }
-    
+    const { data: orders } = await supabaseClient.from('pods_orders').select('*').eq('client_phone', currentUser.phone).eq('company_id', currentUser.company_id);
+    if(!orders || orders.length === 0) { container.innerHTML = '<p style="color:var(--text-muted)">Nenhuma ordem ativa.</p>'; return; }
     container.innerHTML = '';
-    totalOrders.reverse().forEach(o => {
-        const isFromHistory = completedOrders ? completedOrders.some(compItem => compItem.id === o.id) : false;
-        const currentStatus = isFromHistory ? 'concluido' : (o.status || 'recebido');
-
-        let fillWidth = "0%";
-        let step1Class = "", step2Class = "", step3Class = "", step4Class = "";
-
-        let labelPasso1 = "Recebido";
-        if(currentStatus === 'fechado') {
-            fillWidth = "0%";
-            step1Class = "active";
-            labelPasso1 = "Agendado 🌙";
-        } else if(currentStatus === 'recebido') { fillWidth = "0%"; step1Class = "active"; }
-        else if(currentStatus === 'preparando') { fillWidth = "33%"; step1Class = "active"; step2Class = "active"; }
-        else if(currentStatus === 'rota') { fillWidth = "66%"; step1Class = "active"; step2Class = "active"; step3Class = "active"; }
-        else if(currentStatus === 'concluido') { fillWidth = "100%"; step1Class = "active"; step2Class = "active"; step3Class = "active"; step4Class = "active"; }
-
-        let htmlTempoEspera = '';
-        if(currentStatus !== 'concluido' && currentStatus !== 'fechado' && o.wait_time && o.wait_time.trim() !== '') {
-            htmlTempoEspera = `
-                <div class="wait-time-badge">
-                    <span style="font-size: 13px; color: var(--text-muted);">🕒 Previsão de Entrega:</span>
-                    <strong style="color: var(--success); font-size: 14px;">${o.wait_time}</strong>
-                </div>`;
-        } else if (currentStatus === 'fechado') {
-            htmlTempoEspera = `
-                <div class="wait-time-badge" style="border-color: rgba(255,159,10,0.3);">
-                    <span style="font-size: 13px; color: var(--text-muted);">🌙 Aguardando Abertura:</span>
-                    <strong style="color: var(--warning); font-size: 13px;">Será aceito na abertura</strong>
-                </div>`;
-        }
-
+    orders.reverse().forEach(o => {
         container.innerHTML += `
-            <div class="order-card" style="border-left-color: ${currentStatus === 'concluido' ? 'var(--success)' : (currentStatus === 'fechado' ? 'var(--warning)' : 'var(--primary)')}">
-                <div class="order-header">
-                    <strong>ORDEM #${o.id.toString().slice(-4)}</strong>
-                    <span style="color: ${currentStatus === 'concluido' ? 'var(--success)' : (currentStatus === 'fechado' ? 'var(--warning)' : 'var(--primary)')}; font-size: 12px; font-weight:700;">
-                        ${currentStatus.toUpperCase()}
-                    </span>
-                </div>
-                <div class="order-body" style="margin-top: 8px;">
-                    <p style="color: var(--text); font-size:14px; font-weight:500;">1x ${o.product_name} [${o.flavor}]</p>
-                    <p style="font-weight:600; font-size:13px; margin: 5px 0 15px 0;">Total: R$ ${Number(o.total_price).toFixed(2)}</p>
-                    
-                    ${htmlTempoEspera}
-
-                    <div class="uber-tracker-box">
-                        <div class="uber-timeline">
-                            <div class="uber-timeline-fill" style="width: ${fillWidth}"></div>
-                            
-                            <div class="uber-step ${step1Class}">
-                                <div class="uber-dot">1</div>
-                                <div class="uber-step-label">${labelPasso1}</div>
-                            </div>
-                            <div class="uber-step ${step2Class}">
-                                <div class="uber-dot">2</div>
-                                <div class="uber-step-label">Preparando</div>
-                            </div>
-                            <div class="uber-step ${step3Class}">
-                                <div class="uber-dot">3</div>
-                                <div class="uber-step-label">Em Rota</div>
-                            </div>
-                            <div class="uber-step ${step4Class}">
-                                <div class="uber-dot">4</div>
-                                <div class="uber-step-label">Entregue</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <div class="order-card">
+                <div class="order-header"><strong>ORDEM #${o.id}</strong> <span>${o.status.toUpperCase()}</span></div>
+                <p style="margin-top:8px;">1x ${o.product_name} [${o.flavor}]</p>
+                <button class="btn-adm-status current" onclick="openChatBoxModal(${o.id})" style="margin-top:10px; width:100%;">💬 Abrir Chat com Suporte</button>
             </div>`;
     });
 }
 
+// ====================================================
+// 🏬 VISÃO DO LOJISTA (ESTEIRA DE PRODUÇÃO COMPLETA)
+// ====================================================
 async function renderAdminOrders() {
-    if(!currentUser || currentUser.role !== 'admin') return;
-
     const container = document.getElementById('orders-container');
-    const { data: orders } = await supabaseClient.from('pods_orders').select('*').order('id', { ascending: false });
-
-    if(!orders || orders.length === 0) { container.innerHTML = '<p style="color:var(--text-muted)">Sem ordens de envio ativas no momento.</p>'; return; }
+    const { data: orders } = await supabaseClient.from('pods_orders').select('*').eq('company_id', currentUser.company_id).order('id', { ascending: false });
+    if(!orders || orders.length === 0) { container.innerHTML = '<p style="color:var(--text-muted)">Sem pedidos para a sua loja.</p>'; return; }
     container.innerHTML = '';
     orders.forEach(o => {
-        const textoMensagem = `Confirmando pedido no Rei dos Pods: %0A%0A📦 *1x ${o.product_name} (${o.flavor})* %0A💵 *TOTAL:* R$ ${Number(o.total_price).toFixed(2)} %0A📍 *Endereço:* ${o.client_address}`;
-        const linkWhatsapp = `https://wa.me/55${o.client_phone}?text=${textoMensagem}`;
         const statusAtual = o.status || 'recebido';
-
-        let cardStyleExtra = '';
-        let badgeNotificacaoFechado = '';
-        if(statusAtual === 'fechado') {
-            cardStyleExtra = 'style="border-left-color: var(--warning); background: rgba(255,159,10,0.02);"';
-            badgeNotificacaoFechado = `<span style="background:var(--warning); color:#000; font-size:10px; padding:2px 6px; border-radius:4px; font-weight:700; margin-left:10px;">🌙 FEITO COM LOJA FECHADA</span>`;
-        }
+        let cardStyleExtra = statusAtual === 'fechado' ? 'style="border-left-color: var(--warning); background: rgba(255,159,10,0.02);"' : '';
 
         container.innerHTML += `
             <div class="order-card" id="order-card-adm-${o.id}" ${cardStyleExtra}>
-                <div class="order-header"><strong>ORDEM #${o.id}</strong> ${badgeNotificacaoFechado}</div>
-                <div class="order-body">
+                <div class="order-header"><strong>ORDEM #${o.id}</strong> <span style="color: var(--primary); font-weight:bold;">${statusAtual.toUpperCase()}</span></div>
+                <div class="order-body" style="margin-top: 8px;">
                     <p><strong>Cliente:</strong> ${o.client_name} [${o.client_phone}]</p>
                     <p><strong>Destino:</strong> ${o.client_address}</p>
-                    <p style="color: var(--primary); margin: 6px 0;">Item: 1x ${o.product_name} (${o.flavor})</p>
-                    <p style="font-weight:600; margin-bottom:12px;">Total Faturado: R$ ${Number(o.total_price).toFixed(2)}</p>
+                    <p style="color: var(--primary); margin: 6px 0;"><strong>Item:</strong> 1x ${o.product_name} (${o.flavor})</p>
+                    <p style="font-weight:600; margin-bottom:12px;">Faturamento: R$ ${Number(o.total_price).toFixed(2)}</p>
                     
-                    <div class="adm-wait-input-group">
-                        <input type="text" id="adm-wait-time-${o.id}" placeholder="Ex: 30 a 45 min" value="${o.wait_time || ''}">
-                        <button class="btn-save-wait" onclick="updateOrderWaitTime(${o.id})">Fixar Tempo</button>
+                    <div class="adm-wait-input-group" style="display:flex; gap:5px; margin-bottom:12px;">
+                        <input type="text" id="adm-wait-time-${o.id}" placeholder="Ex: 30-40 min" value="${o.wait_time || ''}" style="flex:1; padding:8px; background:var(--input-bg); border:1px solid var(--border); color:#fff; border-radius:4px;">
+                        <button class="btn-save-wait" onclick="updateOrderWaitTime(${o.id})" style="padding:8px 12px; background:var(--primary); color:#000; border:none; border-radius:4px; font-weight:700; cursor:pointer;">Fixar</button>
                     </div>
-
-                    <div class="adm-status-row">
-                        <button class="btn-adm-status ${statusAtual === 'recebido' ? 'current' : ''}" onclick="updateOrderStatus(${o.id}, 'recebido')">Aceitar/Recebido</button>
-                        <button class="btn-adm-status ${statusAtual === 'preparando' ? 'current' : ''}" onclick="updateOrderStatus(${o.id}, 'preparando')">Preparar</button>
-                        <button class="btn-adm-status ${statusAtual === 'rota' ? 'current' : ''}" onclick="updateOrderStatus(${o.id}, 'rota')">Em Rota</button>
-                        <button class="btn-adm-status" onclick="moveOrderToFinalHistory(${o.id})">✓ Concluir</button>
+                    
+                    <div class="adm-status-row" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:6px;">
+                        <button class="btn-adm-status ${statusAtual === 'recebido' ? 'current' : ''}" onclick="updateStatus(${o.id}, 'recebido')">Aceitar</button>
+                        <button class="btn-adm-status ${statusAtual === 'preparando' ? 'current' : ''}" onclick="updateStatus(${o.id}, 'preparando')">Preparar</button>
+                        <button class="btn-adm-status ${statusAtual === 'rota' ? 'current' : ''}" onclick="updateStatus(${o.id}, 'rota')">Em Rota</button>
+                        <button class="btn-adm-status" onclick="moveOrderToFinalHistory(${o.id})" style="background:var(--success); color:#000; border:none;">Concluir</button>
                     </div>
-
-                    <a href="${linkWhatsapp}" target="_blank" class="whatsapp-btn">💬 Chamar no WhatsApp</a>
+                    
+                    <button class="buy-btn-premium" onclick="openChatBoxModal(${o.id})" style="margin-top: 10px; background: var(--input-bg); border: 1px solid var(--border); padding: 12px; color: #fff; width:100%; font-size:12px;">💬 Abrir Chat Anônimo com Cliente</button>
                 </div>
             </div>`;
     });
@@ -626,204 +545,144 @@ async function renderAdminOrders() {
 async function updateOrderWaitTime(orderId) {
     const inputVal = document.getElementById(`adm-wait-time-${orderId}`).value.trim();
     await supabaseClient.from('pods_orders').update({ wait_time: inputVal }).eq('id', orderId);
-    showPremiumNotification("Tempo Atualizado", "Previsão de entrega enviada.", "success");
-}
-
-async function updateOrderStatus(orderId, newStatus) {
-    await supabaseClient.from('pods_orders').update({ status: newStatus }).eq('id', orderId);
-    showPremiumNotification("Fase Avançada", `Status da ordem alterado para: ${newStatus.toUpperCase()}`, "success");
+    showPremiumNotification("Tempo Atualizado", "Previsão de entrega enviada ao cliente.", "success");
 }
 
 async function moveOrderToFinalHistory(orderId) {
-    if(!currentUser || currentUser.role !== 'admin') return;
-
     const { data: order } = await supabaseClient.from('pods_orders').select('*').eq('id', orderId).single();
     if(!order) return;
-
+    
     const { error: insertError } = await supabaseClient.from('pods_history').insert([{
         client_name: order.client_name, client_phone: order.client_phone, client_address: order.client_address,
         product_name: order.product_name, flavor: order.flavor, product_price: order.product_price,
-        delivery_price: order.delivery_price, total_price: order.total_price, status: 'concluido', wait_time: ''
+        delivery_price: order.delivery_price, total_price: order.total_price, status: 'concluido',
+        wait_time: '', company_id: currentUser.company_id
     }]);
-
+    
     if(!insertError) {
         await supabaseClient.from('pods_orders').delete().eq('id', orderId);
-        showPremiumNotification("Entrega Finalizada", "Pedido arquivado no histórico.", "success");
+        showPremiumNotification("Ordem Concluída", "Pedido finalizado e enviado ao faturamento.", "success");
     }
 }
 
+async function updateStatus(id, st) { await supabaseClient.from('pods_orders').update({ status: st }).eq('id', id); }
+
 async function renderAdminInventoryManager() {
-    if(!currentUser || currentUser.role !== 'admin') return;
-
-    const container = document.getElementById('admin-inventory-container');
-    container.innerHTML = '<p style="color:var(--text-muted)">Carregando nuvem...</p>';
-    const { data: products } = await supabaseClient.from('pods_products').select('*').order('id', { ascending: false });
-    if(!products) return;
-
-    container.innerHTML = '';
-    products.forEach(p => {
-        let cardAlertClass = "";
-        let alertBadgeHTML = "";
-
-        if(p.stock === 0) {
-            cardAlertClass = "stock-out";
-            alertBadgeHTML = `<span class="stock-alert-label" style="background:var(--danger); color:#fff;">🚨 ESTOQUE ZERADO / REPOR</span>`;
-        } else if (p.stock <= 3) {
-            cardAlertClass = "stock-low";
-            alertBadgeHTML = `<span class="stock-alert-label" style="background:var(--warning); color:#000;">⚠️ ESTOQUE CRÍTICO (${p.stock} UNID)</span>`;
-        }
-
+    const container = document.getElementById('admin-inventory-container'); container.innerHTML = '';
+    const { data: prods } = await supabaseClient.from('pods_products').select('*').eq('company_id', currentUser.company_id);
+    if(prods) prods.forEach(p => {
         container.innerHTML += `
-            <div class="inventory-card ${cardAlertClass}">
-                ${alertBadgeHTML}
-                <div class="inventory-info">
-                    <h4 style="color:var(--primary); font-size:16px;">${p.name}</h4>
-                    <div class="inventory-row-edit">
-                        <div>
-                            <label>Preço Base</label>
-                            <input type="number" step="0.01" id="edit-price-${p.id}" value="${p.price}">
-                        </div>
-                        <div>
-                            <label>Promoção?</label>
-                            <select id="edit-ispromo-${p.id}">
-                                <option value="false" ${!p.is_promo ? 'selected' : ''}>Não</option>
-                                <option value="true" ${p.is_promo ? 'selected' : ''}>Sim</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label>Preço Promo</label>
-                            <input type="number" step="0.01" id="edit-promoprice-${p.id}" value="${p.promo_price}">
-                        </div>
-                        <div>
-                            <label>Estoque</label>
-                            <input type="number" id="edit-stock-${p.id}" value="${p.stock}">
-                        </div>
-                    </div>
-                    <div style="margin-top:10px;">
-                        <label>Sabores (Separados por vírgula)</label>
-                        <input type="text" id="edit-flavors-${p.id}" value="${p.flavors.join(', ')}" style="width:100%; padding:10px; background:var(--input-bg); border:1px solid var(--border); color:#fff; border-radius:8px; font-size:13px;">
-                    </div>
+            <div class="inventory-card">
+                <h4>${p.name}</h4>
+                <div class="inventory-row-edit">
+                    <div><label>Preço</label><input type="number" step="0.01" id="inv-p-${p.id}" value="${p.price}"></div>
+                    <div><label>Estoque</label><input type="number" id="inv-s-${p.id}" value="${p.stock}"></div>
                 </div>
-                <button class="btn-save-inline" onclick="updateProductInline(${p.id})">Salvar Mudanças</button>
-                <button class="btn-action-delete" onclick="deleteProductFromInventory(${p.id})">Remover Pod</button>
+                <button class="btn-save-inline" onclick="saveInv(${p.id})">Salvar</button>
             </div>`;
     });
 }
 
-async function updateProductInline(productId) {
-    if(!currentUser || currentUser.role !== 'admin') return;
-
-    const price = parseFloat(document.getElementById(`edit-price-${productId}`).value);
-    const isPromo = document.getElementById(`edit-ispromo-${productId}`).value === 'true';
-    const promoPrice = parseFloat(document.getElementById(`edit-promoprice-${productId}`).value) || 0;
-    const stock = parseInt(document.getElementById(`edit-stock-${productId}`).value);
-    const flavors = document.getElementById(`edit-flavors-${productId}`).value.split(',').map(f => f.trim()).filter(f => f !== "");
-
-    await supabaseClient.from('pods_products').update({ price, is_promo: isPromo, promo_price: promoPrice, stock, flavors }).eq('id', productId);
-    showPremiumNotification("Catálogo Atualizado", "Alterações salvas com sucesso.", "success");
-}
-
-async function deleteProductFromInventory(productId) {
-    if(!currentUser || currentUser.role !== 'admin') return;
-
-    if(confirm("Remover permanentemente?")) { 
-        await supabaseClient.from('pods_products').delete().eq('id', productId); 
-        showPremiumNotification("Item Excluído", "O pod foi removido do acervo público.", "success");
-    }
+async function saveInv(id) {
+    const price = parseFloat(document.getElementById(`inv-p-${id}`).value);
+    const stock = parseInt(document.getElementById(`inv-s-${id}`).value);
+    await supabaseClient.from('pods_products').update({ price, stock }).eq('id', id);
+    showPremiumNotification("Salvo", "Estoque modificado.", "success");
 }
 
 async function saveProduct(e) {
     e.preventDefault();
-    if(!currentUser || currentUser.role !== 'admin') return;
-
     const name = sanitizeInput(document.getElementById('prod-name').value);
     const puffs = parseInt(document.getElementById('prod-puffs').value);
     const price = parseFloat(document.getElementById('prod-price').value);
-    const isPromoValue = document.getElementById('prod-promo').value === 'sim';
-    const promoPrice = isPromoValue ? parseFloat(document.getElementById('prod-price-promo').value) : 0.00;
     const stock = parseInt(document.getElementById('prod-stock').value);
-    const flavorsArray = document.getElementById('prod-flavors').value.split(',').map(f => f.trim()).filter(f => f !== "");
-
-    let publicImageUrl = "";
-
-    if(currentProductFile) {
-        const fileExtension = currentProductFile.name.split('.').pop();
-        const uniqueFileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExtension}`;
-
-        const { data: uploadData, error: uploadError } = await supabaseClient.storage
-            .from('pods')
-            .upload(uniqueFileName, currentProductFile);
-
-        if(uploadError) {
-            showPremiumNotification("Falha no Upload", "Erro ao subir imagem em HD para o bucket do Supabase.", "error");
-            return;
-        }
-
-        const { data: publicUrlData } = supabaseClient.storage
-            .from('pods')
-            .getPublicUrl(uniqueFileName);
-            
-        if(publicUrlData) { publicImageUrl = publicUrlData.publicUrl; }
-    }
-
-    const { error } = await supabaseClient.from('pods_products').insert([{ 
-        name, puffs, price, is_promo: isPromoValue, promo_price: promoPrice, 
-        image: publicImageUrl, flavors: flavorsArray, stock 
-    }]);
-
-    if(!error) { 
-        showPremiumNotification("Item Publicado!", "O novo pod já se encontra visível em alta definição.", "success");
-        document.getElementById('product-form').reset(); 
-        currentProductFile = null; 
-    } else {
-        showPremiumNotification("Erro Operacional", "Erro ao salvar pod na tabela relacional.", "error");
-    }
+    const flavors = document.getElementById('prod-flavors').value.split(',').map(f => f.trim());
+    
+    await supabaseClient.from('pods_products').insert([{ name, puffs, price, stock, flavors, is_promo:false, promo_price:0, company_id: currentUser.company_id }]);
+    showPremiumNotification("Publicado", "Item adicionado ao seu catálogo.", "success");
+    document.getElementById('product-form').reset();
 }
 
 async function renderAdminClientsManager() {
-    if(!currentUser || currentUser.role !== 'admin') return;
+    const container = document.getElementById('admin-clients-container'); container.innerHTML = '';
+    const { data: users } = await supabaseClient.from('pods_users').select('*').eq('company_id', currentUser.company_id);
+    if(users) users.forEach(u => { container.innerHTML += `<div class="client-profile-card"><h4>👥 ${u.name}</h4><p>WhatsApp: ${u.phone}</p></div>`; });
+}
 
-    const container = document.getElementById('admin-clients-container');
-    container.innerHTML = '<p style="color:var(--text-muted)">Buscando usuários...</p>';
+// ====================================================
+// 👑 VISÃO MASTER DO SUPER ADM (VOCÊ)
+// ====================================================
+async function saveNewCompanyMaster(e) {
+    e.preventDefault();
+    const name = sanitizeInput(document.getElementById('comp-name').value);
+    const invite_code = document.getElementById('comp-code').value.trim();
+    const delivery_fee = parseFloat(document.getElementById('comp-fee').value);
+    const phone_adm = document.getElementById('comp-phone').value.trim();
+    const password_adm = document.getElementById('comp-password').value;
 
-    const { data: users } = await supabaseClient.from('pods_users').select('*').order('name', { ascending: true });
-    const { data: activeOrders } = await supabaseClient.from('pods_orders').select('*');
-    const { data: completedOrders } = await supabaseClient.from('pods_history').select('*');
+    const { error } = await supabaseClient.from('pods_companies').insert([{ name, invite_code, delivery_fee, phone_adm, password_adm, status: 'active' }]);
+    if(!error) {
+        showPremiumNotification("Sucesso", "Nova Franquia Ativada no Hub!", "success");
+        document.getElementById('company-form').reset();
+        renderSuperCompaniesManager();
+    } else { showPremiumNotification("Erro", "Código de convite ou Telefone já ocupado.", "error"); }
+}
 
-    if(!users) return;
-
+async function renderSuperCompaniesManager() {
+    const container = document.getElementById('super-companies-list'); if(!container) return;
+    container.innerHTML = '<p style="color:var(--text-muted)">Mapeando servidores...</p>';
+    
+    const { data: companies } = await supabaseClient.from('pods_companies').select('*').order('id', { ascending: false });
+    if(!companies || companies.length === 0) { container.innerHTML = '<p style="color:var(--text-muted)">Nenhuma empresa franqueada ainda.</p>'; return; }
+    
     container.innerHTML = '';
-    users.forEach(u => {
-        const activeFilter = activeOrders ? activeOrders.filter(o => o.client_phone === u.phone) : [];
-        const completeFilter = completedOrders ? completedOrders.filter(o => o.client_phone === u.phone) : [];
-        const allClientPurchases = [...activeFilter, ...completeFilter];
-        let historyRowsHTML = '';
+    companies.forEach(c => {
+        const isBlocked = c.status === 'blocked';
+        const cardStyle = isBlocked ? 'style="border-left: 4px solid var(--danger); background: rgba(255,59,48,0.02);"' : 'style="border-left: 4px solid var(--success);"';
         
-        if(allClientPurchases.length === 0) {
-            historyRowsHTML = '<p style="color: var(--text-muted); font-size:12px; font-style:italic">Este membro ainda não realizou aquisições.</p>';
-        } else {
-            allClientPurchases.reverse().forEach(o => {
-                const isPending = activeFilter.some(activeItem => activeItem.id === o.id);
-                const tagStatus = isPending ? `<span style="color:var(--primary); font-size:10px;">[${o.status || 'Pendente'}]</span>` : '<span style="color:var(--success); font-size:10px;">[Entregue]</span>';
-
-                historyRowsHTML += `
-                    <div class="mini-order-row">
-                        <span>📦 ${o.product_name} (${o.flavor}) ${tagStatus}</span>
-                        <strong>R$ ${Number(o.total_price).toFixed(2)}</strong>
-                    </div>`;
-            });
-        }
-
         container.innerHTML += `
-            <div class="client-profile-card">
-                <div class="client-profile-header">
-                    <h4>${u.name}</h4>
-                    <p>Whats: <strong>${u.phone}</strong></p>
+            <div class="inventory-card" ${cardStyle}>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="font-size:16px; color:#fff;">${c.name}</h4>
+                    <span style="font-size:10px; font-weight:900; padding:2px 6px; border-radius:4px; background:${isBlocked ? 'var(--danger)' : 'var(--success)'}; color:#000;">
+                        ${c.status.toUpperCase()}
+                    </span>
                 </div>
-                <div class="client-purchase-history">
-                    <h5>Histórico Geral de Aparelhos (${allClientPurchases.length})</h5>
-                    ${historyRowsHTML}
+                <p style="font-size:12px; margin: 6px 0; color:var(--text-muted);">
+                    🔑 Convite: <strong style="color:var(--primary)">${c.invite_code}</strong> | 🛵 Frete: R$ ${c.delivery_fee.toFixed(2)}<br>
+                    📱 Dono: ${c.phone_adm} | 🔐 Senha: ${c.password_adm}
+                </p>
+                <div class="inventory-row-edit" style="grid-template-columns: 1fr; margin-top:10px;">
+                    <button class="btn-adm-status" style="background:${isBlocked ? 'var(--success)' : 'var(--danger)'}; color:#fff; font-weight:700;" 
+                        onclick="toggleCompanyBlockMaster(${c.id}, '${c.status}')">
+                        ${isBlocked ? '🟢 Desbloquear e Ativar Loja' : '🔴 Bloquear Loja (Inadimplente)'}
+                    </button>
                 </div>
+            </div>`;
+    });
+}
+
+async function toggleCompanyBlockMaster(id, currentStatus) {
+    if(!currentUser || currentUser.role !== 'superadmin') return;
+    const nextStatus = currentStatus === 'active' ? 'blocked' : 'active';
+    
+    await supabaseClient.from('pods_companies').update({ status: nextStatus }).eq('id', id);
+    showPremiumNotification("Escopo Modificado", `A empresa foi alterada para ${nextStatus.toUpperCase()} com sucesso.`, "success");
+    renderSuperCompaniesManager();
+}
+
+async function renderSuperGlobalInventory() {
+    const container = document.getElementById('super-global-inventory-container'); if(!container) return;
+    container.innerHTML = '';
+    
+    const { data: products } = await supabaseClient.from('pods_products').select('*, pods_companies(name)');
+    if(products) products.forEach(p => {
+        const storeName = p.pods_companies ? p.pods_companies.name : "N/A";
+        container.innerHTML += `
+            <div class="inventory-card" style="border-left: 2px solid var(--border);">
+                <span style="font-size:10px; color:var(--primary); font-weight:700;">🏬 LOJA: ${storeName.toUpperCase()}</span>
+                <h4 style="margin-top:3px;">${p.name}</h4>
+                <p style="font-size:12px; color:var(--text-muted)">Estoque Atual: <strong>${p.stock} unidades</strong> | Preço: R$ ${p.price.toFixed(2)}</p>
             </div>`;
     });
 }
