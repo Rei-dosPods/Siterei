@@ -1,0 +1,11 @@
+# Chaves e Arquivos de Ambiente (Segurança Máxima)
+.env
+.env.local
+senhas.txt
+
+# Arquivo de Credencial do Firebase
+*firebase-adminsdk*.json
+
+# Pastas temporárias do Supabase
+.supabase/
+supabase/.temp/
