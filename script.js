@@ -20,7 +20,7 @@ let holdProgress = 0;
 let realtimeChannel = null;
 
 // ====================================================
-// 🎵 MOTOR DE ÁUDIO NATIVO (SIRENE INSTANTÂNEA)
+// 🎵 MOTOR DE ÁUDIO NATIVO E NOTIFICAÇÃO DO SISTEMA
 // ====================================================
 function tocarAlertaSonoroPedido() {
     try {
@@ -37,6 +37,23 @@ function tocarAlertaSonoroPedido() {
     } catch (e) {
         console.error("Erro ao reproduzir som de alerta:", e);
     }
+}
+
+function dispararNotificacaoNativa(titulo, corpo) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    navigator.serviceWorker.getRegistration().then(function(reg) {
+        const options = {
+            body: corpo,
+            icon: 'https://cdn-icons-png.flaticon.com/512/1161/1161388.png', 
+            vibrate: [200, 100, 200, 100, 200],
+            requireInteraction: true 
+        };
+        if (reg && reg.showNotification) {
+            reg.showNotification(titulo, options);
+        } else {
+            new Notification(titulo, options);
+        }
+    });
 }
 
 // ====================================================
@@ -60,10 +77,9 @@ function deleteCookie(name) { document.cookie = name + "=; expires=Thu, 01 Jan 1
 // 🚨 SISTEMA DE BLOQUEIO E PERMISSÃO FORÇADA
 // ====================================================
 async function verificarEForcarPermissaoNotificacao() {
-    if (!currentUser || currentUser.role !== 'client') return;
+    if (!currentUser || currentUser.role === 'superadmin') return;
 
     if ('serviceWorker' in navigator && 'Notification' in window) {
-        // Registra o SW de fundo
         navigator.serviceWorker.register('/sw.js').catch(err => console.error("Erro SW:", err));
 
         if (Notification.permission === 'default') {
@@ -73,39 +89,49 @@ async function verificarEForcarPermissaoNotificacao() {
             inicializarNotificacoesPush(currentUser.phone);
         }
         else if (Notification.permission === 'denied') {
-            showPremiumNotification("⚠️ Alerta", "As notificações estão bloqueadas no seu aparelho. Sem elas, você não saberá quando o motoboy sair.", "error");
+            const msg = currentUser.role === 'vendor' 
+                ? "⚠️ Notificações bloqueadas. Você não ouvirá a sirene de novos pedidos se fechar o navegador!" 
+                : "⚠️ Alerta: As notificações estão bloqueadas no seu aparelho. Sem elas, você não saberá quando o motoboy sair.";
+            showPremiumNotification("Atenção", msg, "error");
         }
     }
 }
 
-// Cria uma barreira física na tela que obriga o usuário a clicar (Gatilho real para o navegador)
 function mostrarModalDePermissaoForcada() {
     let modal = document.getElementById('force-notify-modal');
     if (!modal) {
         modal = document.createElement('div');
         modal.id = 'force-notify-modal';
         modal.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.92); z-index:99999; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:20px; text-align:center; backdrop-filter: blur(5px);";
+        
+        const isVendor = currentUser && currentUser.role === 'vendor';
+        const titulo = isVendor ? "Sirene de Pedidos 🚨" : "Atenção Logística 🛵";
+        const texto = isVendor 
+            ? "Para você <strong>não perder nenhuma venda</strong>, precisamos ativar a sirene e os avisos em tempo real sempre que um cliente fizer um pedido na sua loja." 
+            : "Para o seu pedido chegar rápido e com segurança, <strong>precisamos te avisar em tempo real</strong> quando o motoboy sair.";
+        const btnTexto = isVendor ? "Ligar Sirene da Loja" : "Liberar Radar";
+
         modal.innerHTML = `
             <div style="background:var(--card-bg, #111); padding:30px; border-radius:12px; border:2px solid var(--primary, #00DFD8); max-width:400px; box-shadow: 0 0 30px rgba(0, 223, 216, 0.2);">
                 <div style="font-size: 40px; margin-bottom:10px;">🔔</div>
-                <h2 style="color:var(--primary, #00DFD8); margin-bottom:15px;">Atenção Logística</h2>
-                <p style="color:#ddd; margin-bottom:25px; font-size:15px; line-height:1.6;">Para o seu pedido chegar rápido e com segurança, <strong>precisamos te avisar em tempo real</strong> quando o motoboy sair.<br><br>Permita as notificações a seguir para continuar.</p>
-                <button id="btn-accept-notify" style="background:var(--primary, #00DFD8); color:#000; font-weight:900; font-size:16px; padding:16px 20px; border:none; border-radius:8px; cursor:pointer; width:100%; text-transform:uppercase; box-shadow: 0 4px 15px rgba(0, 223, 216, 0.3);">Liberar Radar</button>
+                <h2 style="color:var(--primary, #00DFD8); margin-bottom:15px;">${titulo}</h2>
+                <p style="color:#ddd; margin-bottom:25px; font-size:15px; line-height:1.6;">${texto}<br><br>Permita as notificações a seguir para continuar.</p>
+                <button id="btn-accept-notify" style="background:var(--primary, #00DFD8); color:#000; font-weight:900; font-size:16px; padding:16px 20px; border:none; border-radius:8px; cursor:pointer; width:100%; text-transform:uppercase; box-shadow: 0 4px 15px rgba(0, 223, 216, 0.3);">${btnTexto}</button>
             </div>
         `;
         document.body.appendChild(modal);
 
         document.getElementById('btn-accept-notify').addEventListener('click', async () => {
             try {
-                // Aqui o clique é real! O navegador não pode bloquear.
                 const permission = await Notification.requestPermission();
                 document.getElementById('force-notify-modal').style.display = 'none';
                 
                 if (permission === 'granted') {
-                    showPremiumNotification("🔄 Conexão Ativada", "Seu radar de entregas está ativo!", "success");
+                    showPremiumNotification("🔄 Conexão Ativada", "Alertas sincronizados com sucesso!", "success");
                     inicializarNotificacoesPush(currentUser.phone);
+                    if (isVendor) tocarAlertaSonoroPedido();
                 } else {
-                    showPremiumNotification("Bloqueado", "Você recusou o aviso. Preste muita atenção no site para não perder a entrega.", "error");
+                    showPremiumNotification("Bloqueado", "Você recusou os avisos.", "error");
                 }
             } catch (err) {
                 console.error("Erro na permissão:", err);
@@ -214,9 +240,9 @@ async function logUserIn(user) {
         titleDisp.innerText = "HUB MESTRE"; subtDisp.innerText = "Gestão Geral"; switchView('super-companies');
     } else if (user.role === 'vendor') {
         titleDisp.innerText = user.name.toUpperCase(); subtDisp.innerText = "Painel Lojista"; switchView('admin');
+        verificarEForcarPermissaoNotificacao(); 
     } else {
         titleDisp.innerText = "PODS STORE"; subtDisp.innerText = "Catálogo Privado"; switchView('loja');
-        // GATILHO COMPORTAMENTAL: Exige notificação ao entrar
         verificarEForcarPermissaoNotificacao();
     }
     fetchStoreStatusInitial(); setupRealtimeListeners(); 
@@ -263,38 +289,62 @@ function syncStoreStatusInterface(isOpen) {
 async function fetchStoreStatusInitial() { const { data } = await supabaseClient.from('store_status').select('is_open').eq('id', 1).single(); if(data) syncStoreStatusInterface(data.is_open); }
 async function toggleStoreStatus() { const novoEstado = !isStoreOpenGlobal; await supabaseClient.from('store_status').update({ is_open: novoEstado }).eq('id', 1); }
 
+// ====================================================
+// 🎛️ ESCUTA EM TEMPO REAL COM POP-UP NATIVO
+// ====================================================
 function setupRealtimeListeners() {
     if (!supabaseClient) return;
     if (realtimeChannel) supabaseClient.removeChannel(realtimeChannel);
+
     realtimeChannel = supabaseClient.channel('custom-all-channel')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pods_orders' }, (payload) => {
         const active = document.querySelector('.view-section.active');
+        
         if (payload.eventType === 'INSERT') {
             if (currentUser && payload.new.company_id === currentUser.company_id) {
-                tocarAlertaSonoroPedido(); showPremiumNotification("🚨 NOVO PEDIDO!", `Ordem #${payload.new.id} recebida!`, "success");
+                tocarAlertaSonoroPedido();
+                showPremiumNotification("🚨 NOVO PEDIDO!", `Ordem #${payload.new.id} recebida!`, "success");
+                dispararNotificacaoNativa("🚨 Sirene de Pedido!", `Você recebeu um novo pedido: Ordem #${payload.new.id}`);
             }
         }
+        
+        if (payload.eventType === 'UPDATE') {
+            if (currentUser && currentUser.role === 'client' && payload.new.client_phone === currentUser.phone) {
+                tocarAlertaSonoroPedido();
+                showPremiumNotification("Atualização Logística 🛵", `Seu pedido agora está: ${payload.new.status.toUpperCase()}`, "success");
+                dispararNotificacaoNativa("Pedido Atualizado 🛵", `O status do seu pedido mudou para: ${payload.new.status.toUpperCase()}`);
+            }
+        }
+
         if (!active) return;
         if (active.id === 'view-admin') renderAdminOrders();
         else if (active.id === 'view-historico') renderClientHistory();
+    })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pods_messages' }, (payload) => {
+        if (document.getElementById('chat-modal').style.display === 'flex' && activeChatOrderId == payload.new.order_id) {
+            appendSingleMessageToChatUI(payload.new);
+        } else {
+            if (currentUser.role === 'vendor' && payload.new.sender === 'client') {
+                showPremiumNotification("Mensagem 💬", `Cliente: ${payload.new.text.slice(0, 25)}`, "success"); 
+                tocarAlertaSonoroPedido();
+                dispararNotificacaoNativa("Nova Mensagem 💬", `Ordem #${payload.new.order_id}: ${payload.new.text}`);
+            } 
+            else if (currentUser.role === 'client' && payload.new.sender === 'admin') {
+                showPremiumNotification("Suporte 👑", payload.new.text.slice(0, 30), "success");
+                tocarAlertaSonoroPedido();
+                dispararNotificacaoNativa("Loja respondeu 👑", payload.new.text);
+            }
+        }
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pods_products' }, () => {
         fetchAndRenderStore();
         if (document.querySelector('#view-gerenciar.active')) renderAdminInventoryManager();
         if (document.querySelector('#view-super-inventory.active')) renderSuperGlobalInventory();
     })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'store_status' }, (payload) => { syncStoreStatusInterface(payload.new.is_open); })
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pods_messages' }, (payload) => {
-        if (document.getElementById('chat-modal').style.display === 'flex' && activeChatOrderId == payload.new.order_id) {
-            appendSingleMessageToChatUI(payload.new);
-        } else {
-            if (currentUser.role === 'vendor' && payload.new.sender === 'client') {
-                showPremiumNotification("Mensagem 💬", `Ordem #${payload.new.order_id}: ${payload.new.text.slice(0, 25)}`, "success"); tocarAlertaSonoroPedido();
-            } else if (currentUser.role === 'client' && payload.new.sender === 'admin') {
-                showPremiumNotification("Suporte 👑", payload.new.text.slice(0, 30), "success");
-            }
-        }
-    }).subscribe();
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'store_status' }, (payload) => { 
+        syncStoreStatusInterface(payload.new.is_open); 
+    })
+    .subscribe();
 }
 
 function switchView(view) {
