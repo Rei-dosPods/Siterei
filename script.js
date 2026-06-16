@@ -324,15 +324,36 @@ async function inicializarNotificacoesPush(userPhone) {
         try {
             const registration = await navigator.serviceWorker.getRegistration();
             if (!registration) return;
+            
             if (Notification.permission === 'granted') {
                 if (!window.firebase) await carregarBibliotecasFirebase();
-                const config = { apiKey: "AIzaSyDd7s3h6-TPleYJ590yKKCKalENyVwtCMg", authDomain: "rei-dos-pods.firebaseapp.com", projectId: "rei-dos-pods", storageBucket: "rei-dos-pods.firebasestorage.app", messagingSenderId: "763358246928", appId: "1:763358246928:web:ff3101060d43b737087295" };
+                
+                const config = { 
+                    apiKey: "AIzaSyDd7s3h6-TPleYJ590yKKCKalENyVwtCMg", 
+                    authDomain: "rei-dos-pods.firebaseapp.com", 
+                    projectId: "rei-dos-pods", 
+                    storageBucket: "rei-dos-pods.firebasestorage.app", 
+                    messagingSenderId: "763358246928", 
+                    appId: "1:763358246928:web:ff3101060d43b737087295" 
+                };
+                
                 if (!firebase.apps.length) firebase.initializeApp(config);
                 const messaging = firebase.messaging();
-                const token = await messaging.getToken({ serviceWorkerRegistration: registration, vapidKey: 'BJN313FYRPWo4rdGUyoJThln_8Yku22BNr50pisWcUyyGrWty43ySpvaBzESO4Cbpq-0nJidFZTTe-7p2HQ4jyk' });
-                if (token) { await supabaseClient.from('pods_users').update({ push_token: token }).eq('phone', userPhone); console.log("Push Ativo!"); }
+                
+                const token = await messaging.getToken({ 
+                    serviceWorkerRegistration: registration, 
+                    vapidKey: 'BJN313FYRPWo4rdGUyoJThln_8Yku22BNr50pisWcUyyGrWty43ySpvaBzESO4Cbpq-0nJidFZTTe-7p2HQ4jyk' 
+                });
+                
+                if (token) { 
+                    await supabaseClient.from('pods_users').update({ push_token: token }).eq('phone', userPhone); 
+                    console.log("Push Ativo!"); 
+                }
             }
-        } catch (e) { console.error('Erro push:', e); }
+        } catch (e) { 
+            // Captura o erro silenciosamente sem sujar o console de vermelho
+            console.log('Aviso: Notificações Push indisponíveis no ambiente local.'); 
+        }
     }
 }
 function carregarBibliotecasFirebase() {
@@ -492,18 +513,36 @@ async function openDetailsModal(productId) {
     document.getElementById('details-modal-puffs').innerText = `💨 Autonomia: ${product.puffs} Puffs`;
     document.getElementById('details-modal-price').innerText = `R$ ${product.price.toFixed(2)}`;
     
-    // 2. A MÁGICA DA IMAGEM: Aplica o estilo de background no div da imagem
+    // 2. Aplica a foto no background do div
     const imgDiv = document.getElementById('details-modal-img');
     if (imgDiv) {
-        // Garantimos que ele vai buscar a URL que você salvou no banco
         imgDiv.style.backgroundImage = `url('${product.image}')`;
         imgDiv.style.backgroundSize = 'cover';
         imgDiv.style.backgroundPosition = 'center';
     }
 
-    // 3. Sabores
-    const flavorsDiv = document.getElementById('details-modal-flavors'); flavorsDiv.innerHTML = '';
-    product.flavors.forEach(f => { flavorsDiv.innerHTML += `<button type="button" class="flavor-btn">${f}</button>`; });
+    // 3. CORREÇÃO DOS SABORES (Lendo o objeto JSONB inteligente)
+    const flavorsDiv = document.getElementById('details-modal-flavors'); 
+    if (flavorsDiv) {
+        flavorsDiv.innerHTML = '';
+        
+        const flavorsObj = product.flavors || {};
+        
+        // Passa por cada sabor no formato de objeto
+        for (const [flavorName, flavorStock] of Object.entries(flavorsObj)) {
+            const isAvailable = parseInt(flavorStock) > 0;
+            
+            // Renderiza o botão de sabor na visualização de detalhes
+            flavorsDiv.innerHTML += `
+                <button type="button" 
+                    class="flavor-btn ${isAvailable ? 'available' : 'esgotado'}" 
+                    ${isAvailable ? '' : 'style="opacity: 0.4; background: #222; text-decoration: line-through;"'} 
+                    disabled>
+                    ${flavorName} ${isAvailable ? '' : '❌'}
+                </button>
+            `;
+        }
+    }
     
     document.getElementById('details-modal').style.display = 'flex';
     document.getElementById('details-action-btn').onclick = () => { closeDetailsModal(); openBuyModal(product); };
@@ -511,17 +550,31 @@ async function openDetailsModal(productId) {
 function closeDetailsModal() { document.getElementById('details-modal').style.display = 'none'; }
 
 function openBuyModal(product) {
-    selectedFlavor = null; resetHoldButton();
+    selectedFlavor = null; 
+    if (typeof resetHoldButton === 'function') resetHoldButton();
+    
     const buttonsContainer = document.getElementById('flavor-buttons-container'); 
     buttonsContainer.innerHTML = '';
     
-    // --- ADICIONE ESTA LINHA ---
+    // Aviso premium de verificação
     buttonsContainer.innerHTML += `<p style="font-size: 12px; color: var(--primary); margin-bottom: 10px; font-weight: bold;">💬 Verifique a disponibilidade antes de confirmar!</p>`;
-    // ---------------------------
     
-    product.flavors.forEach(f => { 
-        buttonsContainer.innerHTML += `<button type="button" class="flavor-btn" onclick="selectFlavorBtn(this, '${f}')">${f}</button>`; 
-    });
+    // Tratamento preventivo: se flavors vier vazio ou inválido
+    const flavorsObj = product.flavors || {};
+    
+    // Passa por cada sabor e sua respectiva quantidade no objeto JSONB
+    for (const [flavorName, flavorStock] of Object.entries(flavorsObj)) {
+        const isAvailable = parseInt(flavorStock) > 0;
+        
+        buttonsContainer.innerHTML += `
+            <button type="button" 
+                class="flavor-btn ${isAvailable ? 'available' : 'esgotado'}" 
+                ${isAvailable ? '' : 'disabled style="opacity: 0.3; cursor: not-allowed; background: #222; border-color: #444;"'} 
+                onclick="selectFlavorBtn(this, '${flavorName}')">
+                ${flavorName} ${isAvailable ? `(${flavorStock} un)` : '❌'}
+            </button>
+        `;
+    }
     
     document.getElementById('buy-modal').style.display = 'flex';
 }
@@ -626,11 +679,135 @@ async function moveOrderToFinalHistory(orderId) {
     if(!error) { await supabaseClient.from('pods_orders').delete().eq('id', orderId); showPremiumNotification("Concluída", "Pedido arquivado.", "success"); }
 }
 async function renderAdminInventoryManager() {
-    const container = document.getElementById('admin-inventory-container'); container.innerHTML = '';
-    const { data: prods } = await supabaseClient.from('pods_products').select('*').eq('company_id', currentUser.company_id);
-    if(prods) prods.forEach(p => {
-        container.innerHTML += `<div class="inventory-card"><h4>${p.name}</h4><div class="inventory-row-edit"><div><label>Preço</label><input type="number" step="0.01" id="inv-p-${p.id}" value="${p.price}"></div><div><label>Estoque</label><input type="number" id="inv-s-${p.id}" value="${p.stock}"></div></div><button class="btn-save-inline" onclick="saveInv(${p.id})">Salvar</button></div>`;
-    });
+    const container = document.getElementById('admin-inventory-container'); 
+    if (!container) return;
+    container.innerHTML = '';
+    
+    // Busca os produtos da empresa do usuário logado
+    const { data: prods, error } = await supabaseClient
+        .from('pods_products')
+        .select('*')
+        .eq('company_id', currentUser.company_id)
+        .order('name', { ascending: true });
+    
+    if (error) {
+        console.error("Erro ao buscar inventário:", error);
+        return;
+    }
+    
+    if (prods && prods.length > 0) {
+        prods.forEach(p => {
+            const flavorsObj = p.flavors || {};
+            let flavorsInputsHtml = '<div class="admin-flavors-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; padding: 10px; background: #111; border-radius: 6px;">';
+            
+            // Loop para gerar inputs de quantidade para cada sabor que já existe
+            for (const [flavor, qte] of Object.entries(flavorsObj)) {
+                flavorsInputsHtml += `
+                    <div class="flavor-edit-box" style="display: flex; flex-direction: column; gap: 4px;">
+                        <label style="font-size: 11px; color: #00DFD8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${flavor}">${flavor}</label>
+                        <input type="number" 
+                            class="inv-flavor-qty-${p.id}" 
+                            data-flavor-name="${flavor}" 
+                            value="${qte}" 
+                            min="0" 
+                            style="width: 100%; background: #222; border: 1px solid #333; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                    </div>
+                `;
+            }
+            flavorsInputsHtml += '</div>';
+
+            // Monta o card do produto com os inputs de edição e o campo para novos sabores
+            container.innerHTML += `
+                <div class="inventory-card" style="padding: 20px; border: 1px solid var(--border); background: #18181b; border-radius: 8px; margin-bottom: 15px;">
+                    <h3 style="font-size: 16px; color: #fff; font-weight: bold; margin-bottom: 5px;">${p.name} <span style="font-size:12px; color:var(--text-muted);">(${p.puffs} Puffs)</span></h3>
+                    
+                    <label style="font-size: 12px; color: var(--text-muted);">Estoque atual por sabores:</label>
+                    ${flavorsInputsHtml}
+                    
+                    <!-- Campo para adicionar novos sabores de forma dinâmica -->
+                    <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 4px;">
+                        <label style="font-size: 12px; color: #aaa;">➕ Adicionar novos sabores para este modelo:</label>
+                        <input type="text" id="inv-new-flavors-${p.id}" placeholder="Ex: Menta:5, Melancia:10" style="width: 100%; background: #222; border: 1px solid #333; color: #fff; padding: 6px 12px; border-radius: 4px; font-size: 13px;">
+                    </div>
+
+                    <div class="inventory-row-edit" style="display: flex; gap: 20px; margin-top: 15px; align-items: flex-end; flex-wrap: wrap;">
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            <label style="font-size: 12px; color: #aaa;">Preço (R$)</label>
+                            <input type="number" step="0.01" id="inv-p-${p.id}" value="${p.price}" style="width: 100px; background: #222; border: 1px solid #333; color: #fff; padding: 6px 12px; border-radius: 4px;">
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            <label style="font-size: 12px; color: #666;">Estoque Total (Auto)</label>
+                            <input type="number" id="inv-s-${p.id}" value="${p.stock}" disabled style="width: 80px; background: #111; border: 1px solid #222; color: #666; padding: 6px 12px; border-radius: 4px; text-align: center;">
+                        </div>
+                        <button type="button" onclick="updatePodInventory(${p.id})" style="background: var(--primary); color: #000; font-weight: bold; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; transition: 0.2s; margin-left: auto;">
+                            💾 Salvar Alterações
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+    } else {
+        container.innerHTML = '<p style="color: var(--text-muted); padding: 20px;">Nenhum produto encontrado para gerenciamento.</p>';
+    }
+}
+
+async function updatePodInventory(productId) {
+    try {
+        const priceInput = document.getElementById(`inv-p-${productId}`);
+        const newFlavorsInput = document.getElementById(`inv-new-flavors-${productId}`);
+        
+        const newPrice = parseFloat(priceInput.value) || 0;
+        let updatedFlavorsObj = {};
+        let calculatedTotalStock = 0;
+
+        // 1. Coleta os estoques dos sabores que já estavam listados
+        const flavorInputs = document.querySelectorAll(`.inv-flavor-qty-${productId}`);
+        flavorInputs.forEach(input => {
+            const flavorName = input.getAttribute('data-flavor-name');
+            const flavorQty = parseInt(input.value) || 0;
+            updatedFlavorsObj[flavorName] = flavorQty;
+            calculatedTotalStock += flavorQty;
+        });
+
+        // 2. Processa o campo de novos sabores, se tiver algo preenchido
+        if (newFlavorsInput && newFlavorsInput.value.trim()) {
+            const rawItems = newFlavorsInput.value.split(',');
+            rawItems.forEach(item => {
+                if (item.trim()) {
+                    const parts = item.split(':');
+                    const flavorName = parts[0].trim();
+                    // Se não puser ":quantidade", o padrão vira 1 unidade para o novo sabor
+                    let flavorQty = parts[1] ? parseInt(parts[1].trim()) : 1;
+                    
+                    if (isNaN(flavorQty)) flavorQty = 1;
+
+                    // Adiciona ou soma se o sabor já existia por acaso
+                    updatedFlavorsObj[flavorName] = (updatedFlavorsObj[flavorName] || 0) + flavorQty;
+                    calculatedTotalStock += flavorQty;
+                }
+            });
+        }
+
+        // 3. Executa o UPDATE no Supabase
+        const { error } = await supabaseClient
+            .from('pods_products')
+            .update({
+                price: newPrice,
+                flavors: updatedFlavorsObj,
+                stock: calculatedTotalStock // Atualiza o somatório geral automaticamente
+            })
+            .eq('id', productId);
+
+        if (error) throw error;
+
+        // Feedback de sucesso premium e atualiza a tela
+        showPremiumNotification("Sucesso", "Inventário e sabores atualizados com sucesso!", "success");
+        renderAdminInventoryManager();
+        
+    } catch (err) {
+        console.error("Erro ao atualizar inventário:", err);
+        showPremiumNotification("Erro", "Não foi possível salvar as alterações.", "error");
+    }
 }
 async function saveProduct(e) {
     e.preventDefault();
@@ -642,45 +819,66 @@ async function saveProduct(e) {
         return;
     }
 
-    // Feedback visual para o lojista
     const btn = e.target.querySelector('button');
     const originalText = btn.innerText;
-    btn.innerText = "Processando arquivo...";
+    btn.innerText = "Processando...";
     btn.disabled = true;
 
     try {
-        // 1. Upload para o Storage 'pods'
+        // 1. Upload da imagem no bucket
         const fileExt = file.name.split('.').pop();
         const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-        
-        const { data: uploadData, error: uploadError } = await supabaseClient.storage
-            .from('pods')
-            .upload(fileName, file);
-
+        const { data: uploadData, error: uploadError } = await supabaseClient.storage.from('pods').upload(fileName, file);
         if (uploadError) throw uploadError;
 
-        // 2. Obter URL pública
         const { data: publicUrlData } = supabaseClient.storage.from('pods').getPublicUrl(fileName);
         const publicUrl = publicUrlData.publicUrl;
 
-        // 3. Inserir dados no banco
+        // 2. NOVA LÓGICA: PROCESSAR SABORES E QUANTIDADES INDIVIDUAIS
+        const flavorsInput = document.getElementById('prod-flavors').value; // Pega o input de sabores
+        const defaultStock = parseInt(document.getElementById('prod-stock').value) || 0; // Backup se não puser ":"
+        
+        // Separa por vírgula: ["Melancia:12", "Menta:8"]
+        const rawFlavorsArray = flavorsInput.split(',');
+        let flavorsJsonObj = {};
+        let totalStockCalculated = 0;
+
+        rawFlavorsArray.forEach(item => {
+            if (item.trim()) {
+                // Separa o sabor da quantidade pelo ":"
+                const parts = item.split(':');
+                const flavorName = parts[0].trim();
+                
+                // Se o lojista colocou a quantidade dps do ":", usa ela. Se não, usa o "Volume em Estoque" padrão.
+                let flavorStock = parts[1] ? parseInt(parts[1].trim()) : defaultStock;
+                
+                if (isNaN(flavorStock)) flavorStock = defaultStock;
+
+                flavorsJsonObj[flavorName] = flavorStock;
+                totalStockCalculated += flavorStock; // Soma no estoque global do modelo
+            }
+        });
+
+        // 3. Salva no banco de dados com o JSONB estruturado
         const { error: insertError } = await supabaseClient.from('pods_products').insert([{ 
             name: sanitizeInput(document.getElementById('prod-name').value), 
             puffs: parseInt(document.getElementById('prod-puffs').value), 
             price: parseFloat(document.getElementById('prod-price').value), 
-            stock: parseInt(document.getElementById('prod-stock').value), 
-            flavors: document.getElementById('prod-flavors').value.split(',').map(f => f.trim()), 
-            image: publicUrl, // Link que criamos acima
+            stock: totalStockCalculated, // Salva a soma real de todas as unidades
+            flavors: flavorsJsonObj,     // Salva o JSON ex: {"Melancia": 12, "Menta": 8}
+            image: publicUrl,
             company_id: currentUser.company_id 
         }]);
 
         if (insertError) throw insertError;
 
-        showPremiumNotification("Sucesso", "Produto publicado!", "success");
+        showPremiumNotification("Sucesso", "Produto cadastrado com estoques individuais!", "success");
         document.getElementById('product-form').reset();
+        if (typeof renderAdminInventoryManager === 'function') renderAdminInventoryManager();
+        
     } catch (err) {
-        console.error("Erro ao salvar produto:", err);
-        showPremiumNotification("Erro", "Falha ao publicar. Verifique as permissões do Storage.", "error");
+        console.error(err);
+        showPremiumNotification("Erro", "Falha ao publicar produto.", "error");
     } finally {
         btn.innerText = originalText;
         btn.disabled = false;
