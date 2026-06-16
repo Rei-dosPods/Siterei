@@ -20,7 +20,81 @@ let isStoreOpenGlobal = true;
 let holdTimer = null;
 let holdProgress = 0;
 let realtimeChannel = null;
+// ====================================================
+// 🚀 ENVIAR PEDIDO E REDIRECIONAR PARA O WHATSAPP REAL
+// ====================================================
+async function finalizarPedidoCliente(product) {
+    const paymentMethod = document.getElementById('buy-payment-method').value;
+    const changeNeeded = document.getElementById('buy-change-needed').value;
+    const changeValue = document.getElementById('buy-change-value').value;
+    const address = document.getElementById('client-address').value;
+    
+    if (!selectedFlavor) {
+        showPremiumNotification("Atenção", "Por favor, selecione um sabor antes!", "error");
+        return;
+    }
+    if (!address) {
+        showPremiumNotification("Atenção", "Por favor, preencha o endereço de destino!", "error");
+        return;
+    }
+    if (!paymentMethod) {
+        showPremiumNotification("Atenção", "Por favor, selecione a forma de pagamento!", "error");
+        return;
+    }
 
+    let trocoTexto = "Não precisa de troco";
+    if (paymentMethod === 'Dinheiro' && changeNeeded === 'Sim') {
+        trocoTexto = `Precisa de troco para R$ ${parseFloat(changeValue).toFixed(2)}`;
+    }
+
+    try {
+        const orderId = `REQ-${Math.floor(100000 + Math.random() * 900000)}`;
+        const prodPrice = parseFloat(product.price) || 0;
+
+        // Salva o pedido no banco de dados Supabase
+        const { error } = await supabaseClient.from('pods_orders').insert([{
+            order_number: orderId,
+            product_name: product.name,
+            flavor_selected: selectedFlavor,
+            price: prodPrice,
+            payment_method: paymentMethod,
+            change_needed: trocoTexto,
+            address: address,
+            status: 'Pendente'
+        }]);
+
+        if (error) throw error;
+
+        // NÚMERO FIXO ATUALIZADO DA SUA LOJA
+        const storeWhatsApp = "5542988141603"; 
+
+        // Estruturação da mensagem pronta enviada para você
+        const textoMensagem = `👑 *NOVO PEDIDO REALIZADO* 👑
+
+🆔 *Ordem do Pedido:* ${orderId}
+💨 *Modelo:* ${product.name}
+🎨 *Sabor Escolhido:* ${selectedFlavor}
+💵 *Valor total:* R$ ${prodPrice.toFixed(2)} (Entrega Grátis)
+📍 *Endereço:* ${address}
+💳 *Forma de Pagamento:* ${paymentMethod}
+📦 *Detalhe do Troco:* ${trocoTexto}
+
+Aguardando a confirmação e envio! 🚀`;
+
+        const urlWhatsApp = `https://api.whatsapp.com/send?phone=${storeWhatsApp}&text=${encodeURIComponent(textoMensagem)}`;
+
+        showPremiumNotification("Sucesso", "Pedido registrado! Redirecionando para o WhatsApp...", "success");
+
+        // Redireciona o cliente para o seu WhatsApp após 1.5 segundos
+        setTimeout(() => {
+            window.location.href = urlWhatsApp;
+        }, 1500);
+
+    } catch (err) {
+        console.error("Erro ao fechar pedido:", err);
+        showPremiumNotification("Erro", "Falha ao processar o pedido no banco.", "error");
+    }
+}
 // ====================================================
 // 🎵 MOTOR DE ÁUDIO NATIVO E NOTIFICAÇÃO DO SISTEMA
 // ====================================================
@@ -553,16 +627,16 @@ function openBuyModal(product) {
     selectedFlavor = null; 
     if (typeof resetHoldButton === 'function') resetHoldButton();
     
+    // Armazena o produto aberto na variável global para o botão de segurar coletar depois
+    openedProductData = product; 
+
     const buttonsContainer = document.getElementById('flavor-buttons-container'); 
     buttonsContainer.innerHTML = '';
     
-    // Aviso premium de verificação
     buttonsContainer.innerHTML += `<p style="font-size: 12px; color: var(--primary); margin-bottom: 10px; font-weight: bold;">💬 Verifique a disponibilidade antes de confirmar!</p>`;
     
-    // Tratamento preventivo: se flavors vier vazio ou inválido
     const flavorsObj = product.flavors || {};
     
-    // Passa por cada sabor e sua respectiva quantidade no objeto JSONB
     for (const [flavorName, flavorStock] of Object.entries(flavorsObj)) {
         const isAvailable = parseInt(flavorStock) > 0;
         
@@ -576,29 +650,15 @@ function openBuyModal(product) {
         `;
     }
     
+    // --- 🛠️ CORREÇÃO DOS VALORES NO MODAL DE CHECKOUT ---
+    const prodPrice = parseFloat(product.price) || 0;
+    
+    document.getElementById('summary-prod-price').innerText = `R$ ${prodPrice.toFixed(2)}`;
+    document.getElementById('summary-total-price').innerText = `R$ ${prodPrice.toFixed(2)}`;
+    // ----------------------------------------------------
+
     document.getElementById('buy-modal').style.display = 'flex';
 }
-function selectFlavorBtn(el, f) { document.querySelectorAll('#flavor-buttons-container .flavor-btn').forEach(b => b.classList.remove('selected')); el.classList.add('selected'); selectedFlavor = f; }
-function closeModal() { document.getElementById('buy-modal').style.display = 'none'; }
-
-function setupHoldToBuyButton() {
-    const trigger = document.getElementById('btn-hold-trigger'); if(!trigger) return;
-    trigger.addEventListener('touchstart', startHolding, { passive: true }); trigger.addEventListener('touchend', stopHolding);
-    trigger.addEventListener('mousedown', startHolding); trigger.addEventListener('mouseup', stopHolding);
-}
-function startHolding() {
-    if(!selectedFlavor || document.getElementById('client-address').value.trim() === "") return;
-    const fillBar = document.getElementById('hold-progress-fill'); const btnLabel = document.getElementById('hold-btn-label');
-    btnLabel.innerText = "Faturando ordem..."; holdProgress = 0; clearInterval(holdTimer);
-    holdTimer = setInterval(() => {
-        holdProgress += 4;
-        if (holdProgress >= 100) { fillBar.style.width = '100%'; clearInterval(holdTimer); executeOrderCheckoutProcess(); } 
-        else { fillBar.style.width = holdProgress + '%'; }
-    }, 50);
-}
-function stopHolding() { clearInterval(holdTimer); if(holdProgress < 100) resetHoldButton(); }
-function resetHoldButton() { document.getElementById('hold-progress-fill').style.width = '0%'; document.getElementById('hold-btn-label').innerText = "Segure para Confirmar Ordem"; }
-
 async function executeOrderCheckoutProcess() {
     const prod = openedProductData;
     await supabaseClient.from('pods_products').update({ stock: prod.stock - 1 }).eq('id', prod.id);
@@ -969,5 +1029,108 @@ function mostrarBotaoInstalarApp() {
         });
     } else {
         btnInstalar.style.display = 'block';
+    }
+}// ====================================================
+// 💳 CONTROLADORES DE INTERFACE DE PAGAMENTO E TROCO
+// ====================================================
+function toggleTrocoField() {
+    const paymentMethod = document.getElementById('buy-payment-method').value;
+    const trocoContainer = document.getElementById('troco-container');
+    
+    if (paymentMethod === 'Dinheiro') {
+        trocoContainer.style.display = 'block';
+    } else {
+        trocoContainer.style.display = 'none';
+        document.getElementById('buy-change-needed').value = 'Não';
+        document.getElementById('buy-change-value').style.display = 'none';
+        document.getElementById('buy-change-value').required = false;
+    }
+}
+
+function toggleTrocoValorField() {
+    const changeNeeded = document.getElementById('buy-change-needed').value;
+    const changeValueInput = document.getElementById('buy-change-value');
+    
+    if (changeNeeded === 'Sim') {
+        changeValueInput.style.display = 'block';
+        changeValueInput.required = true;
+    } else {
+        changeValueInput.style.display = 'none';
+        changeValueInput.required = false;
+        changeValueInput.value = '';
+    }
+}
+
+// ====================================================
+// 🚀 ENVIAR PEDIDO E REDIRECIONAR PARA O WHATSAPP
+// ====================================================
+async function finalizarPedidoCliente(product) {
+    const paymentMethod = document.getElementById('buy-payment-method').value;
+    const changeNeeded = document.getElementById('buy-change-needed').value;
+    const changeValue = document.getElementById('buy-change-value').value;
+    const address = document.getElementById('client-address').value;
+    
+    if (!selectedFlavor) {
+        showPremiumNotification("Atenção", "Por favor, selecione um sabor antes!", "error");
+        return;
+    }
+    if (!address) {
+        showPremiumNotification("Atenção", "Por favor, preencha o endereço de destino!", "error");
+        return;
+    }
+    if (!paymentMethod) {
+        showPremiumNotification("Atenção", "Por favor, selecione a forma de pagamento!", "error");
+        return;
+    }
+
+    let trocoTexto = "Não precisa de troco";
+    if (paymentMethod === 'Dinheiro' && changeNeeded === 'Sim') {
+        trocoTexto = `Precisa de troco para R$ ${parseFloat(changeValue).toFixed(2)}`;
+    }
+
+    try {
+        const orderId = `REQ-${Math.floor(100000 + Math.random() * 900000)}`;
+        const prodPrice = parseFloat(product.price) || 0;
+
+        // Salva no Supabase
+        const { error } = await supabaseClient.from('pods_orders').insert([{
+            order_number: orderId,
+            product_name: product.name,
+            flavor_selected: selectedFlavor,
+            price: prodPrice,
+            payment_method: paymentMethod,
+            change_needed: trocoTexto,
+            address: address,
+            status: 'Pendente'
+        }]);
+
+        if (error) throw error;
+
+        const storeWhatsApp = product.whatsapp_number || "5542999999999"; 
+
+        // Mensagem sem a taxa de entrega antiga
+        const textoMensagem = `👑 *NOVO PEDIDO REALIZADO* 👑
+
+🆔 *Ordem do Pedido:* ${orderId}
+💨 *Modelo:* ${product.name}
+🎨 *Sabor Escolhido:* ${selectedFlavor}
+💵 *Valor total:* R$ ${prodPrice.toFixed(2)} (Entrega Grátis)
+📍 *Endereço:* ${address}
+💳 *Forma de Pagamento:* ${paymentMethod}
+📦 *Detalhe do Troco:* ${trocoTexto}
+
+Aguardando a confirmação e envio! 🚀`;
+
+        const urlWhatsApp = `https://api.whatsapp.com/send?phone=${storeWhatsApp}&text=${encodeURIComponent(textoMensagem)}`;
+
+        showPremiumNotification("Sucesso", "Pedido registrado! Redirecionando...", "success");
+
+        setTimeout(() => {
+            window.location.href = urlWhatsApp;
+        }, 1500);
+
+    } catch (err) {
+        console.error("Erro ao fechar pedido:", err);
+        showPremiumNotification("Erro", "Falha ao processar o pedido no banco.", "error");
     }
 }

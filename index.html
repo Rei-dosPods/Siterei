@@ -246,9 +246,28 @@
                 <input type="hidden" id="modal-product-id">
                 <div class="form-group"><label>Sabor Selecionado:</label><div id="flavor-buttons-container" class="flavor-selector-grid"></div></div>
                 <div class="form-group"><label>Endereço de Destino</label><input type="text" id="client-address" placeholder="Rua, número, bairro" required></div>
+                
+                <div class="form-group" style="margin-top: 15px;">
+                    <label>Forma de Pagamento (Na Entrega)</label>
+                    <select id="buy-payment-method" onchange="toggleTrocoField()" style="width: 100%; background: #111; border: 1px solid var(--border); color: #fff; padding: 10px; border-radius: 6px; font-size: 14px; outline: none; margin-top: 5px;" required>
+                        <option value="" disabled selected>Selecione como quer pagar...</option>
+                        <option value="Pix">Pix na Entrega</option>
+                        <option value="Dinheiro">Dinheiro</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="troco-container" style="margin-top: 15px; display: none;">
+                    <label>Precisa de Troco?</label>
+                    <select id="buy-change-needed" onchange="toggleTrocoValorField()" style="width: 100%; background: #111; border: 1px solid var(--border); color: #fff; padding: 10px; border-radius: 6px; font-size: 14px; outline: none; margin-top: 5px;">
+                        <option value="Não">Não preciso de troco</option>
+                        <option value="Sim">Sim, preciso de troco</option>
+                    </select>
+                    <input type="number" step="0.01" id="buy-change-value" placeholder="Troco para quanto? (Ex: 100)" style="width: 100%; background: #111; border: 1px solid var(--border); color: #fff; padding: 10px; border-radius: 6px; margin-top: 8px; font-size: 14px; display: none;">
+                </div>
+
                 <div class="checkout-summary">
                     <div class="summary-line"><span>Dispositivo:</span> <span id="summary-prod-price">R$ 0,00</span></div>
-                    <div class="summary-line"><span>Logística Courier:</span> <span id="summary-delivery-price" style="color:var(--primary)">R$ 10,00</span></div>
+                    <div class="summary-line"><span>Logística Courier:</span> <span id="summary-delivery-price" style="color:#00DFD8; font-weight: bold;">GRÁTIS (Por nossa conta!)</span></div>
                     <hr style="border-color: var(--border); margin: 12px 0;">
                     <div class="summary-line total"><span>Montante Total:</span> <span id="summary-total-price">R$ 0,00</span></div>
                 </div>
@@ -261,7 +280,6 @@
             </form>
         </div>
     </div>
-
     <div class="modal" id="chat-modal" style="display: none;">
         <div class="modal-content premium-popup chat-popup-box animate-fade-in">
             <span class="close-modal-btn" onclick="closeChatModal()">&times;</span>
@@ -285,5 +303,14 @@
 
     <script src="script.js"></script>
     <script src="test-suite.js"></script>
+   
+<a href="https://api.whatsapp.com/send?phone=5542988141603&text=Olá! Estou no site e gostaria de tirar uma dúvida sobre os dispositivos. 💨" 
+   id="whatsapp-floating-btn" 
+   target="_blank" 
+   style="position: fixed !important; bottom: 20px !important; right: 20px !important; background-color: #25D366 !important; color: #fff !important; width: 60px !important; height: 60px !important; border-radius: 50% !important; display: flex !important; align-items: center !important; justify-content: center !important; box-shadow: 0 4px 12px rgba(37, 211, 102, 0.5) !important; z-index: 99999 !important; text-decoration: none !important; border: 1px solid rgba(255,255,255,0.2) !important;">
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" viewBox="0 0 16 16" style="display: block !important;">
+        <path d="M13.601 2.326A7.85 7.85 0 0 0 12.41 1.156C11.166.496 9.74.174 8.32.172A7.9 7.9 0 0 0 .173 8.061c0 1.503.393 2.97 1.14 4.28L0 16l3.73-.978a7.87 7.87 0 0 0 3.803.974c1.417-.001 2.822-.323 3.99-1.002A7.86 7.86 0 0 0 13.6 13.6a7.85 7.85 0 0 0 1.168-3.996c.002-1.417-.32-2.822-.967-3.991M10.534 11.3c-.326.112-1.344.405-2.13-.264-1.322-1.12-1.614-2.288-1.701-2.65-.088-.363-.047-.56.096-.708.125-.13.25-.3.374-.45.125-.15.166-.25.25-.417.083-.166.042-.312-.02-.457-.063-.146-.56-1.348-.767-1.85-.203-.491-.41-.424-.56-.432-.146-.008-.314-.008-.48-.008s-.438.063-.666.312c-.229.249-.875.855-.875 2.08s.9 2.406.996 2.54c.097.136 1.77 2.706 4.289 3.791.6.259 1.069.414 1.434.53.603.19 1.152.163 1.587.099.486-.07 1.488-.609 1.698-1.196.21-.587.21-1.09.147-1.197-.063-.107-.23-.172-.556-.334"/>
+    </svg>
+</a>
 </body>
 </html>

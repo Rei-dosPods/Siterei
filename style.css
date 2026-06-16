@@ -467,3 +467,7 @@ header .subtitle { color: var(--text-muted); font-size: 11px; text-transform: up
     50% { transform: scale(1.1); box-shadow: 0 0 10px rgba(255,59,48,0.5); }
     100% { transform: scale(1); }
 }
+#whatsapp-floating-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 16px rgba(37, 211, 102, 0.5);
+}
