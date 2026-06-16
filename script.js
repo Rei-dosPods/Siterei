@@ -512,12 +512,17 @@ function closeDetailsModal() { document.getElementById('details-modal').style.di
 
 function openBuyModal(product) {
     selectedFlavor = null; resetHoldButton();
-    const warningBox = document.getElementById('checkout-closed-warning'); if(warningBox) warningBox.style.display = isStoreOpenGlobal ? 'none' : 'block';
-    const buttonsContainer = document.getElementById('flavor-buttons-container'); buttonsContainer.innerHTML = '';
-    product.flavors.forEach(f => { buttonsContainer.innerHTML += `<button type="button" class="flavor-btn" onclick="selectFlavorBtn(this, '${f}')">${f}</button>`; });
-    document.getElementById('summary-prod-price').innerText = `R$ ${product.price.toFixed(2)}`;
-    document.getElementById('summary-delivery-price').innerText = `R$ ${currentUser.delivery_fee.toFixed(2)}`;
-    document.getElementById('summary-total-price').innerText = `R$ ${(product.price + currentUser.delivery_fee).toFixed(2)}`;
+    const buttonsContainer = document.getElementById('flavor-buttons-container'); 
+    buttonsContainer.innerHTML = '';
+    
+    // --- ADICIONE ESTA LINHA ---
+    buttonsContainer.innerHTML += `<p style="font-size: 12px; color: var(--primary); margin-bottom: 10px; font-weight: bold;">💬 Verifique a disponibilidade antes de confirmar!</p>`;
+    // ---------------------------
+    
+    product.flavors.forEach(f => { 
+        buttonsContainer.innerHTML += `<button type="button" class="flavor-btn" onclick="selectFlavorBtn(this, '${f}')">${f}</button>`; 
+    });
+    
     document.getElementById('buy-modal').style.display = 'flex';
 }
 function selectFlavorBtn(el, f) { document.querySelectorAll('#flavor-buttons-container .flavor-btn').forEach(b => b.classList.remove('selected')); el.classList.add('selected'); selectedFlavor = f; }
