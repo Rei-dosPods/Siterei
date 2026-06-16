@@ -90,8 +90,8 @@ async function verificarEForcarPermissaoNotificacao() {
         }
         else if (Notification.permission === 'denied') {
             const msg = currentUser.role === 'vendor' 
-                ? "⚠️ Notificações bloqueadas. Você não ouvirá a sirene de novos pedidos se fechar o navegador!" 
-                : "⚠️ Alerta: As notificações estão bloqueadas no seu aparelho. Sem elas, você não saberá quando o motoboy sair.";
+                ? "Notificações bloqueadas. Você não ouvirá a sirene de novos pedidos se fechar o navegador!" 
+                : "Alerta: As notificações estão bloqueadas no seu aparelho. Sem elas, você não saberá quando o motoboy sair.";
             showPremiumNotification("Atenção", msg, "error");
         }
     }
@@ -127,7 +127,7 @@ function mostrarModalDePermissaoForcada() {
                 document.getElementById('force-notify-modal').style.display = 'none';
                 
                 if (permission === 'granted') {
-                    showPremiumNotification("🔄 Conexão Ativada", "Alertas sincronizados com sucesso!", "success");
+                    showPremiumNotification("Conexão Ativada", "Alertas sincronizados com sucesso!", "success");
                     inicializarNotificacoesPush(currentUser.phone);
                     if (isVendor) tocarAlertaSonoroPedido();
                 } else {
@@ -153,19 +153,80 @@ window.onload = function() {
 
 function sanitizeInput(text) { return typeof text !== 'string' ? text : text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;"); }
 
+// ====================================================
+// 💅 SISTEMA DE NOTIFICAÇÕES VISUAIS PREMIUM (TOAST)
+// ====================================================
 function showPremiumNotification(title, message, type = "success") {
-    const modal = document.getElementById('notification-modal');
-    const cardBox = document.getElementById('notification-card-box');
-    const icon = document.getElementById('notification-icon');
-    if(!modal || !cardBox || !icon) return;
-    document.getElementById('notification-title').innerText = title;
-    document.getElementById('notification-message').innerText = message;
-    cardBox.className = "alert-popup animate-fade-in " + (type === "success" ? "success-alert" : "error-alert");
-    icon.innerText = type === "success" ? "✓" : "✕";
-    modal.setAttribute("style", "display: flex !important;");
-}
-function closeNotificationModal() { document.getElementById('notification-modal').style.display = 'none'; }
+    let container = document.getElementById('toast-container-premium');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container-premium';
+        container.style.cssText = "position: fixed; top: 20px; right: 20px; z-index: 9999999; display: flex; flex-direction: column; gap: 12px; pointer-events: none;";
+        document.body.appendChild(container);
+    }
 
+    const toast = document.createElement('div');
+    const isSuccess = type === 'success';
+    const icon = isSuccess ? '✅' : '🚨';
+    const color = isSuccess ? '#00DFD8' : '#FF3B30';
+    const shadow = isSuccess ? 'rgba(0, 223, 216, 0.25)' : 'rgba(255, 59, 48, 0.25)';
+
+    toast.style.cssText = `
+        background: rgba(17, 17, 17, 0.90);
+        backdrop-filter: blur(12px);
+        border-left: 4px solid ${color};
+        color: #fff;
+        padding: 16px 20px;
+        border-radius: 8px;
+        box-shadow: 0 10px 30px ${shadow};
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        min-width: 280px;
+        max-width: 350px;
+        transform: translateX(120%);
+        transition: transform 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55), opacity 0.3s ease;
+        cursor: pointer;
+        pointer-events: auto;
+    `;
+
+    toast.innerHTML = `
+        <div style="font-size: 26px;">${icon}</div>
+        <div style="display: flex; flex-direction: column; flex: 1;">
+            <span style="font-weight: 900; font-size: 14px; color: ${color}; text-transform: uppercase; letter-spacing: 0.5px;">${title}</span>
+            <span style="font-size: 13px; color: #E0E0E0; margin-top: 4px; line-height: 1.4;">${message}</span>
+        </div>
+    `;
+
+    container.appendChild(toast);
+
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            toast.style.transform = 'translateX(0)';
+        });
+    });
+
+    toast.onclick = () => {
+        toast.style.transform = 'translateX(120%)';
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 500);
+    };
+
+    setTimeout(() => {
+        if (document.body.contains(toast)) {
+            toast.style.transform = 'translateX(120%)';
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 500);
+        }
+    }, 5500);
+}
+
+// Mantida vazia caso algum HTML antigo ainda chame
+function closeNotificationModal() {} 
+
+// ====================================================
+// 🔐 AUTENTICAÇÃO E LOGIN
+// ====================================================
 function setAuthMode(mode) {
     authMode = mode;
     const btnLogin = document.getElementById('btn-mode-login');
@@ -290,7 +351,7 @@ async function fetchStoreStatusInitial() { const { data } = await supabaseClient
 async function toggleStoreStatus() { const novoEstado = !isStoreOpenGlobal; await supabaseClient.from('store_status').update({ is_open: novoEstado }).eq('id', 1); }
 
 // ====================================================
-// 🎛️ ESCUTA EM TEMPO REAL COM POP-UP NATIVO
+// 🎛️ ESCUTA EM TEMPO REAL
 // ====================================================
 function setupRealtimeListeners() {
     if (!supabaseClient) return;
@@ -303,16 +364,16 @@ function setupRealtimeListeners() {
         if (payload.eventType === 'INSERT') {
             if (currentUser && payload.new.company_id === currentUser.company_id) {
                 tocarAlertaSonoroPedido();
-                showPremiumNotification("🚨 NOVO PEDIDO!", `Ordem #${payload.new.id} recebida!`, "success");
-                dispararNotificacaoNativa("🚨 Sirene de Pedido!", `Você recebeu um novo pedido: Ordem #${payload.new.id}`);
+                showPremiumNotification("NOVO PEDIDO!", `Ordem #${payload.new.id} recebida!`, "success");
+                dispararNotificacaoNativa("Sirene de Pedido!", `Você recebeu um novo pedido: Ordem #${payload.new.id}`);
             }
         }
         
         if (payload.eventType === 'UPDATE') {
             if (currentUser && currentUser.role === 'client' && payload.new.client_phone === currentUser.phone) {
                 tocarAlertaSonoroPedido();
-                showPremiumNotification("Atualização Logística 🛵", `Seu pedido agora está: ${payload.new.status.toUpperCase()}`, "success");
-                dispararNotificacaoNativa("Pedido Atualizado 🛵", `O status do seu pedido mudou para: ${payload.new.status.toUpperCase()}`);
+                showPremiumNotification("Atualização 🛵", `Pedido mudou para: ${payload.new.status.toUpperCase()}`, "success");
+                dispararNotificacaoNativa("Pedido Atualizado", `O status do seu pedido mudou para: ${payload.new.status.toUpperCase()}`);
             }
         }
 
@@ -325,14 +386,14 @@ function setupRealtimeListeners() {
             appendSingleMessageToChatUI(payload.new);
         } else {
             if (currentUser.role === 'vendor' && payload.new.sender === 'client') {
-                showPremiumNotification("Mensagem 💬", `Cliente: ${payload.new.text.slice(0, 25)}`, "success"); 
+                showPremiumNotification("Mensagem", `Cliente: ${payload.new.text.slice(0, 25)}`, "success"); 
                 tocarAlertaSonoroPedido();
-                dispararNotificacaoNativa("Nova Mensagem 💬", `Ordem #${payload.new.order_id}: ${payload.new.text}`);
+                dispararNotificacaoNativa("Nova Mensagem", `Ordem #${payload.new.order_id}: ${payload.new.text}`);
             } 
             else if (currentUser.role === 'client' && payload.new.sender === 'admin') {
-                showPremiumNotification("Suporte 👑", payload.new.text.slice(0, 30), "success");
+                showPremiumNotification("Suporte", payload.new.text.slice(0, 30), "success");
                 tocarAlertaSonoroPedido();
-                dispararNotificacaoNativa("Loja respondeu 👑", payload.new.text);
+                dispararNotificacaoNativa("Loja respondeu", payload.new.text);
             }
         }
     })
@@ -510,7 +571,7 @@ async function updateStatus(id, st) { await supabaseClient.from('pods_orders').u
 async function moveOrderToFinalHistory(orderId) {
     const { data: order } = await supabaseClient.from('pods_orders').select('*').eq('id', orderId).single(); if(!order) return;
     const { error } = await supabaseClient.from('pods_history').insert([{ ...order, status: 'concluido', wait_time: '' }]);
-    if(!error) { await supabaseClient.from('pods_orders').delete().eq('id', orderId); showPremiumNotification("Ordem Concluída", "Pedido arquivado.", "success"); }
+    if(!error) { await supabaseClient.from('pods_orders').delete().eq('id', orderId); showPremiumNotification("Concluída", "Pedido arquivado.", "success"); }
 }
 async function renderAdminInventoryManager() {
     const container = document.getElementById('admin-inventory-container'); container.innerHTML = '';
