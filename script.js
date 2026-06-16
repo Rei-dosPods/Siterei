@@ -5,24 +5,18 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 window.supabaseClient = supabaseClient;
 
-let currentUser = null; // Guarda: user_id, name, phone, role ('client', 'vendor', 'superadmin'), company_id, delivery_fee
-let currentCompanyData = null; // Informações da loja logada ou da loja do cliente
+let currentUser = null; 
+let currentCompanyData = null; 
 let authMode = "login";
 let selectedFlavor = null;
-let currentProductFile = null; 
 let openedProductData = null;
 let globalProductsCache = []; 
 let currentCategoryFilter = "all";
-
-// Controle global do Chat Ativo e expediente
 let activeChatOrderId = null;
 let isStoreOpenGlobal = true;
 
-// Variáveis de controle para o Hold Trigger
 let holdTimer = null;
 let holdProgress = 0;
-const HOLD_DURATION = 1500; 
-
 let realtimeChannel = null;
 
 // ====================================================
@@ -31,21 +25,15 @@ let realtimeChannel = null;
 function tocarAlertaSonoroPedido() {
     try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        
-        // Oscilador 1 (Tom Principal)
         const oscilador1 = audioCtx.createOscillator();
         const ganho1 = audioCtx.createGain();
         oscilador1.type = 'sine';
-        oscilador1.frequency.setValueAtTime(880, audioCtx.currentTime); // Nota Lá (Aguda)
-        
+        oscilador1.frequency.setValueAtTime(880, audioCtx.currentTime); 
         ganho1.gain.setValueAtTime(0.3, audioCtx.currentTime);
         oscilador1.connect(ganho1);
         ganho1.connect(audioCtx.destination);
-        
         oscilador1.start();
         oscilador1.stop(audioCtx.currentTime + 1.2);
-        
-        console.log("🔔 [AUDIO ENGINE] Alerta sonoro disparado com sucesso!");
     } catch (e) {
         console.error("Erro ao reproduzir som de alerta:", e);
     }
@@ -55,69 +43,77 @@ function tocarAlertaSonoroPedido() {
 // 🍪 COOKIES ENGINE
 // ====================================================
 function setCookie(name, value, days = 7) {
-    const d = new Date();
-    d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
-    const expires = "expires=" + d.toUTCString();
-    document.cookie = name + "=" + encodeURIComponent(value) + ";" + expires + ";path=/;SameSite=Strict";
+    const d = new Date(); d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+    document.cookie = name + "=" + encodeURIComponent(value) + ";expires=" + d.toUTCString() + ";path=/;SameSite=Strict";
 }
-
 function getCookie(name) {
-    const cname = name + "=";
-    const decodedCookie = decodeURIComponent(document.cookie);
-    const ca = decodedCookie.split(';');
+    const cname = name + "="; const ca = decodeURIComponent(document.cookie).split(';');
     for (let i = 0; i < ca.length; i++) {
         let c = ca[i].trim();
         if (c.indexOf(cname) == 0) return c.substring(cname.length, c.length);
     }
     return "";
 }
-
 function deleteCookie(name) { document.cookie = name + "=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"; }
 
 // ====================================================
-// 🚨 SISTEMA FORÇADO DE VERIFICAÇÃO DE NOTIFICAÇÕES (MOBILE UPDATE)
+// 🚨 SISTEMA DE BLOQUEIO E PERMISSÃO FORÇADA
 // ====================================================
 async function verificarEForcarPermissaoNotificacao() {
     if (!currentUser || currentUser.role !== 'client') return;
 
     if ('serviceWorker' in navigator && 'Notification' in window) {
-        try {
-            // Registra o service worker PRIMEIRO para o celular liberar o recurso nas configurações
-            const reg = await navigator.serviceWorker.register('/sw.js');
-            console.log("[Service Worker] Registrado com sucesso para escopo de push.");
+        // Registra o SW de fundo
+        navigator.serviceWorker.register('/sw.js').catch(err => console.error("Erro SW:", err));
 
-            if (Notification.permission === 'default') {
-                // Exibe o seu aviso vermelho premium na tela
-                showPremiumNotification(
-                    "📢 ATENÇÃO: Habilite as Notificações", 
-                    "Para garantir que seu pedido chegue rápido, permita as notificações a seguir. Caso não aceite, você poderá ter sérios problemas com o recebimento e rastreio da sua entrega devido à falta de comunicação em tempo real!", 
-                    "error"
-                );
-
-                // Aguarda a leitura e força a janelinha nativa através do registro do Service Worker
-                setTimeout(async () => {
-                    const permission = await Notification.requestPermission();
-                    if (permission === 'granted') {
-                        showPremiumNotification("🔄 Conexão Ativada", "Notificações sincronizadas com sucesso. Seu frete está seguro!", "success");
-                        inicializarNotificacoesPush(currentUser.phone);
-                    }
-                }, 3500);
-            } 
-            else if (Notification.permission === 'granted') {
-                // Se já foi aceito antes, só garante a sincronização do token do Firebase
-                inicializarNotificacoesPush(currentUser.phone);
-            }
-            else if (Notification.permission === 'denied') {
-                showPremiumNotification(
-                    "⚠️ Alerta de Rastreamento", 
-                    "Você bloqueou as notificações. Isso causará sérias falhas de comunicação na entrega. Ative manualmente nas configurações do navegador.", 
-                    "error"
-                );
-            }
-        } catch (err) {
-            console.error("Erro ao instanciar barreira de push no mobile:", err);
+        if (Notification.permission === 'default') {
+            mostrarModalDePermissaoForcada();
+        } 
+        else if (Notification.permission === 'granted') {
+            inicializarNotificacoesPush(currentUser.phone);
+        }
+        else if (Notification.permission === 'denied') {
+            showPremiumNotification("⚠️ Alerta", "As notificações estão bloqueadas no seu aparelho. Sem elas, você não saberá quando o motoboy sair.", "error");
         }
     }
+}
+
+// Cria uma barreira física na tela que obriga o usuário a clicar (Gatilho real para o navegador)
+function mostrarModalDePermissaoForcada() {
+    let modal = document.getElementById('force-notify-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'force-notify-modal';
+        modal.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.92); z-index:99999; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:20px; text-align:center; backdrop-filter: blur(5px);";
+        modal.innerHTML = `
+            <div style="background:var(--card-bg, #111); padding:30px; border-radius:12px; border:2px solid var(--primary, #00DFD8); max-width:400px; box-shadow: 0 0 30px rgba(0, 223, 216, 0.2);">
+                <div style="font-size: 40px; margin-bottom:10px;">🔔</div>
+                <h2 style="color:var(--primary, #00DFD8); margin-bottom:15px;">Atenção Logística</h2>
+                <p style="color:#ddd; margin-bottom:25px; font-size:15px; line-height:1.6;">Para o seu pedido chegar rápido e com segurança, <strong>precisamos te avisar em tempo real</strong> quando o motoboy sair.<br><br>Permita as notificações a seguir para continuar.</p>
+                <button id="btn-accept-notify" style="background:var(--primary, #00DFD8); color:#000; font-weight:900; font-size:16px; padding:16px 20px; border:none; border-radius:8px; cursor:pointer; width:100%; text-transform:uppercase; box-shadow: 0 4px 15px rgba(0, 223, 216, 0.3);">Liberar Radar</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        document.getElementById('btn-accept-notify').addEventListener('click', async () => {
+            try {
+                // Aqui o clique é real! O navegador não pode bloquear.
+                const permission = await Notification.requestPermission();
+                document.getElementById('force-notify-modal').style.display = 'none';
+                
+                if (permission === 'granted') {
+                    showPremiumNotification("🔄 Conexão Ativada", "Seu radar de entregas está ativo!", "success");
+                    inicializarNotificacoesPush(currentUser.phone);
+                } else {
+                    showPremiumNotification("Bloqueado", "Você recusou o aviso. Preste muita atenção no site para não perder a entrega.", "error");
+                }
+            } catch (err) {
+                console.error("Erro na permissão:", err);
+                document.getElementById('force-notify-modal').style.display = 'none';
+            }
+        });
+    }
+    modal.style.display = 'flex';
 }
 
 window.onload = function() {
@@ -129,10 +125,7 @@ window.onload = function() {
     setupHoldToBuyButton();
 }
 
-function sanitizeInput(text) {
-    if (typeof text !== 'string') return text;
-    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
-}
+function sanitizeInput(text) { return typeof text !== 'string' ? text : text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;"); }
 
 function showPremiumNotification(title, message, type = "success") {
     const modal = document.getElementById('notification-modal');
@@ -145,39 +138,28 @@ function showPremiumNotification(title, message, type = "success") {
     icon.innerText = type === "success" ? "✓" : "✕";
     modal.setAttribute("style", "display: flex !important;");
 }
-
 function closeNotificationModal() { document.getElementById('notification-modal').style.display = 'none'; }
 
 function setAuthMode(mode) {
     authMode = mode;
     const btnLogin = document.getElementById('btn-mode-login');
     const btnRegister = document.getElementById('btn-mode-register');
-    
     if(mode === 'login') {
         btnLogin.classList.add('active'); btnRegister.classList.remove('active');
         document.getElementById('group-auth-name').style.display = 'none';
-        
         const vipField = document.getElementById('group-vip-field');
-        if(vipField) {
-            vipField.style.display = 'none';
-            const vipInput = document.getElementById('auth-vip-code');
-            if(vipInput) vipInput.removeAttribute('required');
-        }
+        if(vipField) { vipField.style.display = 'none'; document.getElementById('auth-vip-code').removeAttribute('required'); }
         document.getElementById('auth-submit-btn').innerText = "Acessar Hub";
     } else {
         btnRegister.classList.add('active'); btnLogin.classList.remove('active');
         document.getElementById('group-auth-name').style.display = 'block';
-        
         let vipField = document.getElementById('group-vip-field');
         if(!vipField) {
-            const div = document.createElement('div');
-            div.className = 'form-group'; div.id = 'group-vip-field';
+            const div = document.createElement('div'); div.className = 'form-group'; div.id = 'group-vip-field';
             div.innerHTML = `<label>Código de Indicação da Loja</label><input type="text" id="auth-vip-code" placeholder="Insira o código fornecido pelo lojista" required>`;
             document.getElementById('auth-form').insertBefore(div, document.getElementById('auth-submit-btn'));
         } else { 
-            vipField.style.display = 'block';
-            const vipInput = document.getElementById('auth-vip-code');
-            if(vipInput) vipInput.setAttribute('required', 'required');
+            vipField.style.display = 'block'; document.getElementById('auth-vip-code').setAttribute('required', 'required');
         }
         document.getElementById('auth-submit-btn').innerText = "Criar Minha Conta";
     }
@@ -191,57 +173,34 @@ async function handleAuth(e) {
     if (phoneInput === '404' && passwordInput === '24032008') {
         currentUser = { name: "CEO Master", phone: "404", role: "superadmin", company_id: null, delivery_fee: 0 };
         setCookie('logged_user', JSON.stringify(currentUser), 7);
-        logUserIn(currentUser);
-        showPremiumNotification("Modo Deus", "Painel de controle central de franquias liberado.", "success");
-        return;
+        logUserIn(currentUser); return;
     }
 
     if (authMode === 'login') {
         const { data: vendorStore } = await supabaseClient.from('pods_companies').select('*').eq('phone_adm', phoneInput).eq('password_adm', passwordInput).maybeSingle();
         if(vendorStore) {
-            if(vendorStore.status === 'blocked') {
-                showPremiumNotification("Acesso Bloqueado", "Sua mensalidade de R$50,00 está vencida. Fale com o suporte master.", "error");
-                return;
-            }
+            if(vendorStore.status === 'blocked') { showPremiumNotification("Bloqueado", "Mensalidade vencida.", "error"); return; }
             currentUser = { name: vendorStore.name, phone: phoneInput, role: "vendor", company_id: vendorStore.id, delivery_fee: vendorStore.delivery_fee };
-            setCookie('logged_user', JSON.stringify(currentUser), 7);
-            logUserIn(currentUser);
-            return;
+            setCookie('logged_user', JSON.stringify(currentUser), 7); logUserIn(currentUser); return;
         }
 
         const { data: userFound } = await supabaseClient.from('pods_users').select('*, pods_companies(status, name, delivery_fee)').eq('phone', phoneInput).eq('password', passwordInput).maybeSingle();
         if (userFound) {
-            if(userFound.pods_companies && userFound.pods_companies.status === 'blocked') {
-                showPremiumNotification("Sistema Indisponível", "A loja vinculada a este convite está em manutenção.", "error");
-                return;
-            }
+            if(userFound.pods_companies && userFound.pods_companies.status === 'blocked') { showPremiumNotification("Erro", "Loja em manutenção.", "error"); return; }
             currentUser = { name: userFound.name, phone: userFound.phone, role: "client", company_id: userFound.company_id, delivery_fee: userFound.pods_companies.delivery_fee };
             currentCompanyData = userFound.pods_companies;
-            setCookie('logged_user', JSON.stringify(currentUser), 7);
-            logUserIn(currentUser);
-        } else { 
-            showPremiumNotification("Falha no Acesso", "Credenciais incorretas ou loja inexistente.", "error");
-        }
+            setCookie('logged_user', JSON.stringify(currentUser), 7); logUserIn(currentUser);
+        } else { showPremiumNotification("Falha", "Credenciais incorretas.", "error"); }
     } else {
         const inviteCode = document.getElementById('auth-vip-code').value.trim();
         const { data: targetCompany } = await supabaseClient.from('pods_companies').select('*').eq('invite_code', inviteCode).maybeSingle();
-        
-        if (!targetCompany || targetCompany.status === 'blocked') {
-            showPremiumNotification("Código Inválido", "Esta loja parceira não está credenciada ou foi suspensa.", "error");
-            return;
-        }
-
+        if (!targetCompany || targetCompany.status === 'blocked') { showPremiumNotification("Inválido", "Loja não encontrada.", "error"); return; }
         const nameInput = sanitizeInput(document.getElementById('auth-name').value.trim());
-        const { data: existingUser } = await supabaseClient.from('pods_users').select('phone').eq('phone', phoneInput).maybeSingle();
-        if (existingUser) { showPremiumNotification("Aviso", "Este número de WhatsApp já possui cadastro ativo.", "error"); return; }
-
         const { error } = await supabaseClient.from('pods_users').insert([{ phone: phoneInput, name: nameInput, password: passwordInput, company_id: targetCompany.id }]);
         if (!error) {
-            showPremiumNotification("Membro Registrado!", `Sua conta foi criada no ecossistema da ${targetCompany.name}.`, "success");
             currentUser = { name: nameInput, phone: phoneInput, role: "client", company_id: targetCompany.id, delivery_fee: targetCompany.delivery_fee };
-            setCookie('logged_user', JSON.stringify(currentUser), 7);
-            logUserIn(currentUser);
-        }
+            setCookie('logged_user', JSON.stringify(currentUser), 7); logUserIn(currentUser);
+        } else { showPremiumNotification("Erro", "WhatsApp já cadastrado.", "error"); }
     }
 }
 
@@ -249,25 +208,18 @@ async function logUserIn(user) {
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('main-content').style.display = 'block';
     document.getElementById('user-display-name').innerText = user.name;
-
-    const titleDisp = document.getElementById('store-title-display');
-    const subtDisp = document.getElementById('store-vendor-subtitle');
+    const titleDisp = document.getElementById('store-title-display'); const subtDisp = document.getElementById('store-vendor-subtitle');
 
     if(user.role === 'superadmin') {
-        titleDisp.innerText = "HUB MESTRE"; subtDisp.innerText = "Gerenciamento Geral de Lojas";
-        switchView('super-companies');
+        titleDisp.innerText = "HUB MESTRE"; subtDisp.innerText = "Gestão Geral"; switchView('super-companies');
     } else if (user.role === 'vendor') {
-        titleDisp.innerText = user.name.toUpperCase(); subtDisp.innerText = "Painel Administrativo do Lojista";
-        switchView('admin');
+        titleDisp.innerText = user.name.toUpperCase(); subtDisp.innerText = "Painel Lojista"; switchView('admin');
     } else {
-        titleDisp.innerText = "PODS STORE"; subtDisp.innerText = "Catálogo Exclusivo Privado";
-        switchView('loja');
-        
-        // Executa a checagem forçada e registro assim que o cliente loga
+        titleDisp.innerText = "PODS STORE"; subtDisp.innerText = "Catálogo Privado"; switchView('loja');
+        // GATILHO COMPORTAMENTAL: Exige notificação ao entrar
         verificarEForcarPermissaoNotificacao();
     }
-    fetchStoreStatusInitial(); 
-    setupRealtimeListeners(); 
+    fetchStoreStatusInitial(); setupRealtimeListeners(); 
 }
 
 function handleLogout() {
@@ -279,92 +231,49 @@ function handleLogout() {
 }
 
 // ====================================================
-// 🔔 SINCRONIZAÇÃO DO TOKEN VAPID COM FIREBASE
+// 🔔 FIREBASE INIT
 // ====================================================
 async function inicializarNotificacoesPush(userPhone) {
     if ('serviceWorker' in navigator) {
         try {
             const registration = await navigator.serviceWorker.getRegistration();
             if (!registration) return;
-            
             if (Notification.permission === 'granted') {
                 if (!window.firebase) await carregarBibliotecasFirebase();
-
-                const config = {
-                    apiKey: "AIzaSyDd7s3h6-TPleYJ590yKKCKalENyVwtCMg",
-                    authDomain: "rei-dos-pods.firebaseapp.com",
-                    projectId: "rei-dos-pods",
-                    storageBucket: "rei-dos-pods.firebasestorage.app",
-                    messagingSenderId: "763358246928",
-                    appId: "1:763358246928:web:ff3101060d43b737087295"
-                };
-
+                const config = { apiKey: "AIzaSyDd7s3h6-TPleYJ590yKKCKalENyVwtCMg", authDomain: "rei-dos-pods.firebaseapp.com", projectId: "rei-dos-pods", storageBucket: "rei-dos-pods.firebasestorage.app", messagingSenderId: "763358246928", appId: "1:763358246928:web:ff3101060d43b737087295" };
                 if (!firebase.apps.length) firebase.initializeApp(config);
                 const messaging = firebase.messaging();
-
-                const token = await messaging.getToken({
-                    serviceWorkerRegistration: registration,
-                    vapidKey: 'BJN313FYRPWo4rdGUyoJThln_8Yku22BNr50pisWcUyyGrWty43ySpvaBzESO4Cbpq-0nJidFZTTe-7p2HQ4jyk'
-                });
-
-                if (token) {
-                    await supabaseClient.from('pods_users').update({ push_token: token }).eq('phone', userPhone);
-                    console.log("🔥 [PUSH ENGINE] Token sincronizado com sucesso no Supabase:", token);
-                }
+                const token = await messaging.getToken({ serviceWorkerRegistration: registration, vapidKey: 'BJN313FYRPWo4rdGUyoJThln_8Yku22BNr50pisWcUyyGrWty43ySpvaBzESO4Cbpq-0nJidFZTTe-7p2HQ4jyk' });
+                if (token) { await supabaseClient.from('pods_users').update({ push_token: token }).eq('phone', userPhone); console.log("Push Ativo!"); }
             }
-        } catch (e) { console.error('Erro push engine:', e); }
+        } catch (e) { console.error('Erro push:', e); }
     }
 }
-
 function carregarBibliotecasFirebase() {
     return new Promise((resolve) => {
-        const scriptApp = document.createElement('script'); scriptApp.src = "https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js";
-        document.head.appendChild(scriptApp);
-        scriptApp.onload = () => {
-            const scriptMsg = document.createElement('script'); scriptMsg.src = "https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js";
-            document.head.appendChild(scriptMsg); scriptMsg.onload = () => resolve();
-        };
+        const scriptApp = document.createElement('script'); scriptApp.src = "https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"; document.head.appendChild(scriptApp);
+        scriptApp.onload = () => { const scriptMsg = document.createElement('script'); scriptMsg.src = "https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"; document.head.appendChild(scriptMsg); scriptMsg.onload = () => resolve(); };
     });
 }
 
 function syncStoreStatusInterface(isOpen) {
-    isStoreOpenGlobal = isOpen;
-    const badge = document.getElementById('store-status-badge');
-    if(badge) {
-        badge.innerText = isOpen ? "Aberto" : "Fechado";
-        badge.className = "status-badge-premium " + (isOpen ? "aberto" : "fechado");
-    }
+    isStoreOpenGlobal = isOpen; const badge = document.getElementById('store-status-badge');
+    if(badge) { badge.innerText = isOpen ? "Aberto" : "Fechado"; badge.className = "status-badge-premium " + (isOpen ? "aberto" : "fechado"); }
 }
+async function fetchStoreStatusInitial() { const { data } = await supabaseClient.from('store_status').select('is_open').eq('id', 1).single(); if(data) syncStoreStatusInterface(data.is_open); }
+async function toggleStoreStatus() { const novoEstado = !isStoreOpenGlobal; await supabaseClient.from('store_status').update({ is_open: novoEstado }).eq('id', 1); }
 
-async function fetchStoreStatusInitial() {
-    const { data } = await supabaseClient.from('store_status').select('is_open').eq('id', 1).single();
-    if(data) syncStoreStatusInterface(data.is_open);
-}
-
-async function toggleStoreStatus() {
-    const novoEstado = !isStoreOpenGlobal;
-    await supabaseClient.from('store_status').update({ is_open: novoEstado }).eq('id', 1);
-}
-
-// ====================================================
-// 🎛️ ESCUTA EM TEMPO REAL COM ACIONAMENTO DE SIRENE
-// ====================================================
 function setupRealtimeListeners() {
     if (!supabaseClient) return;
     if (realtimeChannel) supabaseClient.removeChannel(realtimeChannel);
-
     realtimeChannel = supabaseClient.channel('custom-all-channel')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pods_orders' }, (payload) => {
         const active = document.querySelector('.view-section.active');
-        
-        // Dispara o alerta sonoro instantâneo se a ordem pertencer à nossa loja
         if (payload.eventType === 'INSERT') {
             if (currentUser && payload.new.company_id === currentUser.company_id) {
-                tocarAlertaSonoroPedido();
-                showPremiumNotification("🚨 NOVO PEDIDO!", `Ordem #${payload.new.id} recebida! Toque para gerenciar.`, "success");
+                tocarAlertaSonoroPedido(); showPremiumNotification("🚨 NOVO PEDIDO!", `Ordem #${payload.new.id} recebida!`, "success");
             }
         }
-
         if (!active) return;
         if (active.id === 'view-admin') renderAdminOrders();
         else if (active.id === 'view-historico') renderClientHistory();
@@ -374,28 +283,23 @@ function setupRealtimeListeners() {
         if (document.querySelector('#view-gerenciar.active')) renderAdminInventoryManager();
         if (document.querySelector('#view-super-inventory.active')) renderSuperGlobalInventory();
     })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'store_status' }, (payload) => {
-        syncStoreStatusInterface(payload.new.is_open);
-    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'store_status' }, (payload) => { syncStoreStatusInterface(payload.new.is_open); })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pods_messages' }, (payload) => {
         if (document.getElementById('chat-modal').style.display === 'flex' && activeChatOrderId == payload.new.order_id) {
             appendSingleMessageToChatUI(payload.new);
         } else {
             if (currentUser.role === 'vendor' && payload.new.sender === 'client') {
-                showPremiumNotification("Mensagem Recebida 💬", `Ordem #${payload.new.order_id}: ${payload.new.text.slice(0, 25)}`, "success");
-                tocarAlertaSonoroPedido();
+                showPremiumNotification("Mensagem 💬", `Ordem #${payload.new.order_id}: ${payload.new.text.slice(0, 25)}`, "success"); tocarAlertaSonoroPedido();
             } else if (currentUser.role === 'client' && payload.new.sender === 'admin') {
-                showPremiumNotification("Suporte da Loja 👑", payload.new.text.slice(0, 30), "success");
+                showPremiumNotification("Suporte 👑", payload.new.text.slice(0, 30), "success");
             }
         }
-    })
-    .subscribe();
+    }).subscribe();
 }
 
 function switchView(view) {
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
-    
     document.getElementById('client-nav-tabs').style.display = currentUser.role === 'client' ? 'flex' : 'none';
     document.getElementById('admin-nav-tabs').style.display = currentUser.role === 'vendor' ? 'flex' : 'none';
     document.getElementById('super-nav-tabs').style.display = currentUser.role === 'superadmin' ? 'flex' : 'none';
@@ -410,38 +314,28 @@ function switchView(view) {
 }
 
 async function fetchAndRenderStore() {
-    const containerGeral = document.getElementById('products-container-client');
-    if(!containerGeral) return;
-    
-    let targetCompanyId = currentUser.company_id;
-    const { data: products } = await supabaseClient.from('pods_products').select('*').eq('company_id', targetCompanyId).order('name', { ascending: true });
-    if(!products) return;
-    globalProductsCache = products;
-    filterStoreData();
+    const containerGeral = document.getElementById('products-container-client'); if(!containerGeral) return;
+    const { data: products } = await supabaseClient.from('pods_products').select('*').eq('company_id', currentUser.company_id).order('name', { ascending: true });
+    if(products) { globalProductsCache = products; filterStoreData(); }
 }
 
 function filterStoreData() {
     const query = document.getElementById('store-search-input').value.toLowerCase().trim();
-    const containerGeral = document.getElementById('products-container-client');
-    if(!containerGeral) return;
+    const containerGeral = document.getElementById('products-container-client'); if(!containerGeral) return;
     containerGeral.innerHTML = '';
-
     globalProductsCache.forEach(p => {
         if(p.name.toLowerCase().includes(query)) {
-            let htmlPreco = `R$ ${p.price.toFixed(2)}`;
-            const estiloImagem = p.image ? `style="background-image: url('${p.image}');"` : '';
             containerGeral.innerHTML += `
                 <div class="product-card" onclick="openDetailsModal(${p.id})">
-                    <div class="product-img" ${estiloImagem}></div>
+                    <div class="product-img" ${p.image ? `style="background-image: url('${p.image}');"` : ''}></div>
                     <h3 class="product-title">${p.name}</h3>
                     <p class="product-info">💨 ${p.puffs} Puffs</p>
                     <span class="stock-badge available">${p.stock > 0 ? 'Disponível ('+p.stock+')' : 'Esgotado'}</span>
-                    <div class="price-tag" style="margin-top:10px;">${htmlPreco}</div>
+                    <div class="price-tag" style="margin-top:10px;">R$ ${p.price.toFixed(2)}</div>
                 </div>`;
         }
     });
 }
-
 function setCategoryFilter(cat) { currentCategoryFilter = cat; filterStoreData(); }
 
 async function openDetailsModal(productId) {
@@ -456,27 +350,19 @@ async function openDetailsModal(productId) {
     document.getElementById('details-modal').style.display = 'flex';
     document.getElementById('details-action-btn').onclick = () => { closeDetailsModal(); openBuyModal(product); };
 }
-
 function closeDetailsModal() { document.getElementById('details-modal').style.display = 'none'; }
 
 function openBuyModal(product) {
     selectedFlavor = null; resetHoldButton();
-    const warningBox = document.getElementById('checkout-closed-warning');
-    if(warningBox) warningBox.style.display = isStoreOpenGlobal ? 'none' : 'block';
+    const warningBox = document.getElementById('checkout-closed-warning'); if(warningBox) warningBox.style.display = isStoreOpenGlobal ? 'none' : 'block';
     const buttonsContainer = document.getElementById('flavor-buttons-container'); buttonsContainer.innerHTML = '';
     product.flavors.forEach(f => { buttonsContainer.innerHTML += `<button type="button" class="flavor-btn" onclick="selectFlavorBtn(this, '${f}')">${f}</button>`; });
-    
     document.getElementById('summary-prod-price').innerText = `R$ ${product.price.toFixed(2)}`;
     document.getElementById('summary-delivery-price').innerText = `R$ ${currentUser.delivery_fee.toFixed(2)}`;
     document.getElementById('summary-total-price').innerText = `R$ ${(product.price + currentUser.delivery_fee).toFixed(2)}`;
     document.getElementById('buy-modal').style.display = 'flex';
 }
-
-function selectFlavorBtn(el, f) {
-    document.querySelectorAll('#flavor-buttons-container .flavor-btn').forEach(b => b.classList.remove('selected'));
-    el.classList.add('selected'); selectedFlavor = f;
-}
-
+function selectFlavorBtn(el, f) { document.querySelectorAll('#flavor-buttons-container .flavor-btn').forEach(b => b.classList.remove('selected')); el.classList.add('selected'); selectedFlavor = f; }
 function closeModal() { document.getElementById('buy-modal').style.display = 'none'; }
 
 function setupHoldToBuyButton() {
@@ -484,7 +370,6 @@ function setupHoldToBuyButton() {
     trigger.addEventListener('touchstart', startHolding, { passive: true }); trigger.addEventListener('touchend', stopHolding);
     trigger.addEventListener('mousedown', startHolding); trigger.addEventListener('mouseup', stopHolding);
 }
-
 function startHolding() {
     if(!selectedFlavor || document.getElementById('client-address').value.trim() === "") return;
     const fillBar = document.getElementById('hold-progress-fill'); const btnLabel = document.getElementById('hold-btn-label');
@@ -495,7 +380,6 @@ function startHolding() {
         else { fillBar.style.width = holdProgress + '%'; }
     }, 50);
 }
-
 function stopHolding() { clearInterval(holdTimer); if(holdProgress < 100) resetHoldButton(); }
 function resetHoldButton() { document.getElementById('hold-progress-fill').style.width = '0%'; document.getElementById('hold-btn-label').innerText = "Segure para Confirmar Ordem"; }
 
@@ -503,39 +387,30 @@ async function executeOrderCheckoutProcess() {
     const prod = openedProductData;
     await supabaseClient.from('pods_products').update({ stock: prod.stock - 1 }).eq('id', prod.id);
     const address = sanitizeInput(document.getElementById('client-address').value);
-    
     await supabaseClient.from('pods_orders').insert([{
-        client_name: currentUser.name, client_phone: currentUser.phone, client_address: address,
-        product_name: prod.name, flavor: selectedFlavor, product_price: prod.price,
-        delivery_price: currentUser.delivery_fee, total_price: prod.price + currentUser.delivery_fee,
-        status: isStoreOpenGlobal ? 'recebido' : 'fechado', company_id: currentUser.company_id
+        client_name: currentUser.name, client_phone: currentUser.phone, client_address: address, product_name: prod.name, flavor: selectedFlavor,
+        product_price: prod.price, delivery_price: currentUser.delivery_fee, total_price: prod.price + currentUser.delivery_fee, status: isStoreOpenGlobal ? 'recebido' : 'fechado', company_id: currentUser.company_id
     }]);
-
-    showPremiumNotification("Faturamento Completo", "Seu pedido foi sincronizado no painel da loja.", "success");
+    showPremiumNotification("Sucesso", "Seu pedido foi sincronizado na loja.", "success");
     closeModal(); fetchAndRenderStore();
 }
 
 async function openChatBoxModal(orderId) {
-    activeChatOrderId = orderId;
-    document.getElementById('chat-modal').style.display = 'flex';
+    activeChatOrderId = orderId; document.getElementById('chat-modal').style.display = 'flex';
     const { data: messages } = await supabaseClient.from('pods_messages').select('*').eq('order_id', orderId).order('id', { ascending: true });
     const body = document.getElementById('chat-messages-body'); body.innerHTML = '';
     if(messages) messages.forEach(msg => appendSingleMessageToChatUI(msg));
 }
-
 function appendSingleMessageToChatUI(msg) {
     const body = document.getElementById('chat-messages-body'); if(!body) return;
     const isMe = (currentUser.role !== 'client' && msg.sender === 'admin') || (currentUser.role === 'client' && msg.sender === 'client');
     body.innerHTML += `<div class="chat-bubble ${isMe ? 'me' : 'other'}">${msg.text}</div>`;
     body.scrollTop = body.scrollHeight; 
 }
-
 async function handleSendChatMessage(e) {
-    e.preventDefault(); const field = document.getElementById('chat-input-field'); const txt = sanitizeInput(field.value.trim());
-    if(!txt) return; field.value = '';
+    e.preventDefault(); const field = document.getElementById('chat-input-field'); const txt = sanitizeInput(field.value.trim()); if(!txt) return; field.value = '';
     await supabaseClient.from('pods_messages').insert([{ order_id: activeChatOrderId, sender: currentUser.role === 'client' ? 'client' : 'admin', text: txt, company_id: currentUser.company_id }]);
 }
-
 function closeChatModal() { document.getElementById('chat-modal').style.display = 'none'; activeChatOrderId = null; }
 
 async function renderClientHistory() {
@@ -544,17 +419,12 @@ async function renderClientHistory() {
     if(!orders || orders.length === 0) { container.innerHTML = '<p style="color:var(--text-muted)">Nenhuma ordem ativa.</p>'; return; }
     container.innerHTML = '';
     orders.reverse().forEach(o => {
-        container.innerHTML += `
-            <div class="order-card">
-                <div class="order-header"><strong>ORDEM #${o.id}</strong> <span>${o.status.toUpperCase()}</span></div>
-                <p style="margin-top:8px;">1x ${o.product_name} [${o.flavor}]</p>
-                <button class="btn-adm-status current" onclick="openChatBoxModal(${o.id})" style="margin-top:10px; width:100%;">💬 Abrir Chat com Suporte</button>
-            </div>`;
+        container.innerHTML += `<div class="order-card"><div class="order-header"><strong>ORDEM #${o.id}</strong> <span>${o.status.toUpperCase()}</span></div><p style="margin-top:8px;">1x ${o.product_name} [${o.flavor}]</p><button class="btn-adm-status current" onclick="openChatBoxModal(${o.id})" style="margin-top:10px; width:100%;">💬 Abrir Chat com Suporte</button></div>`;
     });
 }
 
 // ====================================================
-// 🏬 VISÃO DO LOJISTA (ESTEIRA DE PRODUÇÃO COMPLETA)
+// 🏬 VISÃO DO LOJISTA
 // ====================================================
 async function renderAdminOrders() {
     const container = document.getElementById('orders-container');
@@ -564,95 +434,47 @@ async function renderAdminOrders() {
     orders.forEach(o => {
         const statusAtual = o.status || 'recebido';
         let cardStyleExtra = statusAtual === 'fechado' ? 'style="border-left-color: var(--warning); background: rgba(255,159,10,0.02);"' : '';
-
         container.innerHTML += `
             <div class="order-card" id="order-card-adm-${o.id}" ${cardStyleExtra}>
                 <div class="order-header"><strong>ORDEM #${o.id}</strong> <span style="color: var(--primary); font-weight:bold;">${statusAtual.toUpperCase()}</span></div>
                 <div class="order-body" style="margin-top: 8px;">
-                    <p><strong>Cliente:</strong> ${o.client_name} [${o.client_phone}]</p>
-                    <p><strong>Destino:</strong> ${o.client_address}</p>
-                    <p style="color: var(--primary); margin: 6px 0;"><strong>Item:</strong> 1x ${o.product_name} (${o.flavor})</p>
+                    <p><strong>Cliente:</strong> ${o.client_name} [${o.client_phone}]</p><p><strong>Destino:</strong> ${o.client_address}</p><p style="color: var(--primary); margin: 6px 0;"><strong>Item:</strong> 1x ${o.product_name} (${o.flavor})</p>
                     <p style="font-weight:600; margin-bottom:12px;">Faturamento: R$ ${Number(o.total_price).toFixed(2)}</p>
-                    
                     <div class="adm-wait-input-group" style="display:flex; gap:5px; margin-bottom:12px;">
-                        <input type="text" id="adm-wait-time-${o.id}" placeholder="Ex: 30-40 min" value="${o.wait_time || ''}" style="flex:1; padding:8px; background:var(--input-bg); border:1px solid var(--border); color:#fff; border-radius:4px;">
-                        <button class="btn-save-wait" onclick="updateOrderWaitTime(${o.id})" style="padding:8px 12px; background:var(--primary); color:#000; border:none; border-radius:4px; font-weight:700; cursor:pointer;">Fixar</button>
+                        <input type="text" id="adm-wait-time-${o.id}" placeholder="Ex: 30 min" value="${o.wait_time || ''}" style="flex:1; padding:8px; background:var(--input-bg); border:1px solid var(--border); color:#fff; border-radius:4px;">
+                        <button onclick="updateOrderWaitTime(${o.id})" style="padding:8px 12px; background:var(--primary); color:#000; border:none; border-radius:4px; font-weight:700; cursor:pointer;">Fixar</button>
                     </div>
-                    
                     <div class="adm-status-row" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:6px;">
                         <button class="btn-adm-status ${statusAtual === 'recebido' ? 'current' : ''}" onclick="updateStatus(${o.id}, 'recebido')">Aceitar</button>
                         <button class="btn-adm-status ${statusAtual === 'preparando' ? 'current' : ''}" onclick="updateStatus(${o.id}, 'preparando')">Preparar</button>
                         <button class="btn-adm-status ${statusAtual === 'rota' ? 'current' : ''}" onclick="updateStatus(${o.id}, 'rota')">Em Rota</button>
                         <button class="btn-adm-status" onclick="moveOrderToFinalHistory(${o.id})" style="background:var(--success); color:#000; border:none;">Concluir</button>
                     </div>
-                    
-                    <button class="buy-btn-premium" onclick="openChatBoxModal(${o.id})" style="margin-top: 10px; background: var(--input-bg); border: 1px solid var(--border); padding: 12px; color: #fff; width:100%; font-size:12px;">💬 Abrir Chat Anônimo com Cliente</button>
+                    <button class="buy-btn-premium" onclick="openChatBoxModal(${o.id})" style="margin-top: 10px; background: var(--input-bg); border: 1px solid var(--border); padding: 12px; color: #fff; width:100%; font-size:12px;">💬 Abrir Chat</button>
                 </div>
             </div>`;
     });
 }
-
-async function updateOrderWaitTime(orderId) {
-    const inputVal = document.getElementById(`adm-wait-time-${orderId}`).value.trim();
-    await supabaseClient.from('pods_orders').update({ wait_time: inputVal }).eq('id', orderId);
-    showPremiumNotification("Tempo Updated", "Previsão de entrega enviada ao cliente.", "success");
-}
-
-async function moveOrderToFinalHistory(orderId) {
-    const { data: order } = await supabaseClient.from('pods_orders').select('*').eq('id', orderId).single();
-    if(!order) return;
-    
-    const { error: insertError } = await supabaseClient.from('pods_history').insert([{
-        client_name: order.client_name, client_phone: order.client_phone, client_address: order.client_address,
-        product_name: order.product_name, flavor: order.flavor, product_price: order.product_price,
-        delivery_price: order.delivery_price, total_price: order.total_price, status: 'concluido',
-        wait_time: '', company_id: currentUser.company_id
-    }]);
-    
-    if(!insertError) {
-        await supabaseClient.from('pods_orders').delete().eq('id', orderId);
-        showPremiumNotification("Ordem Concluída", "Pedido finalizado e enviado ao faturamento.", "success");
-    }
-}
-
+async function updateOrderWaitTime(orderId) { await supabaseClient.from('pods_orders').update({ wait_time: document.getElementById(`adm-wait-time-${orderId}`).value.trim() }).eq('id', orderId); showPremiumNotification("Salvo", "Tempo atualizado.", "success"); }
 async function updateStatus(id, st) { await supabaseClient.from('pods_orders').update({ status: st }).eq('id', id); }
-
+async function moveOrderToFinalHistory(orderId) {
+    const { data: order } = await supabaseClient.from('pods_orders').select('*').eq('id', orderId).single(); if(!order) return;
+    const { error } = await supabaseClient.from('pods_history').insert([{ ...order, status: 'concluido', wait_time: '' }]);
+    if(!error) { await supabaseClient.from('pods_orders').delete().eq('id', orderId); showPremiumNotification("Ordem Concluída", "Pedido arquivado.", "success"); }
+}
 async function renderAdminInventoryManager() {
     const container = document.getElementById('admin-inventory-container'); container.innerHTML = '';
     const { data: prods } = await supabaseClient.from('pods_products').select('*').eq('company_id', currentUser.company_id);
     if(prods) prods.forEach(p => {
-        container.innerHTML += `
-            <div class="inventory-card">
-                <h4>${p.name}</h4>
-                <div class="inventory-row-edit">
-                    <div><label>Preço</label><input type="number" step="0.01" id="inv-p-${p.id}" value="${p.price}"></div>
-                    <div><label>Estoque</label><input type="number" id="inv-s-${p.id}" value="${p.stock}"></div>
-                </div>
-                <button class="btn-save-inline" onclick="saveInv(${p.id})">Salvar</button>
-            </div>`;
+        container.innerHTML += `<div class="inventory-card"><h4>${p.name}</h4><div class="inventory-row-edit"><div><label>Preço</label><input type="number" step="0.01" id="inv-p-${p.id}" value="${p.price}"></div><div><label>Estoque</label><input type="number" id="inv-s-${p.id}" value="${p.stock}"></div></div><button class="btn-save-inline" onclick="saveInv(${p.id})">Salvar</button></div>`;
     });
 }
-
-async function saveInv(id) {
-    const price = parseFloat(document.getElementById(`inv-p-${id}`).value);
-    const stock = parseInt(document.getElementById(`inv-s-${id}`).value);
-    await supabaseClient.from('pods_products').update({ price, stock }).eq('id', id);
-    showPremiumNotification("Salvo", "Estoque modificado.", "success");
-}
-
+async function saveInv(id) { await supabaseClient.from('pods_products').update({ price: parseFloat(document.getElementById(`inv-p-${id}`).value), stock: parseInt(document.getElementById(`inv-s-${id}`).value) }).eq('id', id); showPremiumNotification("Salvo", "Estoque modificado.", "success"); }
 async function saveProduct(e) {
     e.preventDefault();
-    const name = sanitizeInput(document.getElementById('prod-name').value);
-    const puffs = parseInt(document.getElementById('prod-puffs').value);
-    const price = parseFloat(document.getElementById('prod-price').value);
-    const stock = parseInt(document.getElementById('prod-stock').value);
-    const flavors = document.getElementById('prod-flavors').value.split(',').map(f => f.trim());
-    
-    await supabaseClient.from('pods_products').insert([{ name, puffs, price, stock, flavors, is_promo:false, promo_price:0, company_id: currentUser.company_id }]);
-    showPremiumNotification("Publicado", "Item adicionado ao seu catálogo.", "success");
-    document.getElementById('product-form').reset();
+    await supabaseClient.from('pods_products').insert([{ name: sanitizeInput(document.getElementById('prod-name').value), puffs: parseInt(document.getElementById('prod-puffs').value), price: parseFloat(document.getElementById('prod-price').value), stock: parseInt(document.getElementById('prod-stock').value), flavors: document.getElementById('prod-flavors').value.split(',').map(f => f.trim()), is_promo:false, promo_price:0, company_id: currentUser.company_id }]);
+    showPremiumNotification("Publicado", "Item adicionado.", "success"); document.getElementById('product-form').reset();
 }
-
 async function renderAdminClientsManager() {
     const container = document.getElementById('admin-clients-container'); container.innerHTML = '';
     const { data: users } = await supabaseClient.from('pods_users').select('*').eq('company_id', currentUser.company_id);
@@ -660,79 +482,26 @@ async function renderAdminClientsManager() {
 }
 
 // ====================================================
-// 👑 VISÃO MASTER DO SUPER ADM (VOCÊ)
+// 👑 VISÃO MASTER DO SUPER ADM
 // ====================================================
 async function saveNewCompanyMaster(e) {
     e.preventDefault();
-    const name = sanitizeInput(document.getElementById('comp-name').value);
-    const invite_code = document.getElementById('comp-code').value.trim();
-    const delivery_fee = parseFloat(document.getElementById('comp-fee').value);
-    const phone_adm = document.getElementById('comp-phone').value.trim();
-    const password_adm = document.getElementById('comp-password').value;
-
-    const { error } = await supabaseClient.from('pods_companies').insert([{ name, invite_code, delivery_fee, phone_adm, password_adm, status: 'active' }]);
-    if(!error) {
-        showPremiumNotification("Sucesso", "Nova Franquia Ativada no Hub!", "success");
-        document.getElementById('company-form').reset();
-        renderSuperCompaniesManager();
-    } else { showPremiumNotification("Erro", "Código de convite ou Telefone já ocupado.", "error"); }
+    const { error } = await supabaseClient.from('pods_companies').insert([{ name: sanitizeInput(document.getElementById('comp-name').value), invite_code: document.getElementById('comp-code').value.trim(), delivery_fee: parseFloat(document.getElementById('comp-fee').value), phone_adm: document.getElementById('comp-phone').value.trim(), password_adm: document.getElementById('comp-password').value, status: 'active' }]);
+    if(!error) { showPremiumNotification("Sucesso", "Franquia Ativada!", "success"); document.getElementById('company-form').reset(); renderSuperCompaniesManager(); } else { showPremiumNotification("Erro", "Código/Telefone já em uso.", "error"); }
 }
-
 async function renderSuperCompaniesManager() {
     const container = document.getElementById('super-companies-list'); if(!container) return;
-    container.innerHTML = '<p style="color:var(--text-muted)">Mapeando servidores...</p>';
-    
     const { data: companies } = await supabaseClient.from('pods_companies').select('*').order('id', { ascending: false });
-    if(!companies || companies.length === 0) { container.innerHTML = '<p style="color:var(--text-muted)">Nenhuma empresa franqueada ainda.</p>'; return; }
-    
+    if(!companies || companies.length === 0) { container.innerHTML = '<p style="color:var(--text-muted)">Nenhuma empresa.</p>'; return; }
     container.innerHTML = '';
     companies.forEach(c => {
         const isBlocked = c.status === 'blocked';
-        const cardStyle = isBlocked ? 'style="border-left: 4px solid var(--danger); background: rgba(255,59,48,0.02);"' : 'style="border-left: 4px solid var(--success);"';
-        
-        container.innerHTML += `
-            <div class="inventory-card" ${cardStyle}>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <h4 style="font-size:16px; color:#fff;">${c.name}</h4>
-                    <span style="font-size:10px; font-weight:900; padding:2px 6px; border-radius:4px; background:${isBlocked ? 'var(--danger)' : 'var(--success)'}; color:#000;">
-                        ${c.status.toUpperCase()}
-                    </span>
-                </div>
-                <p style="font-size:12px; margin: 6px 0; color:var(--text-muted);">
-                    🔑 Convite: <strong style="color:var(--primary)">${c.invite_code}</strong> | 🛵 Frete: R$ ${c.delivery_fee.toFixed(2)}<br>
-                    📱 Dono: ${c.phone_adm} | 🔐 Senha: ${c.password_adm}
-                </p>
-                <div class="inventory-row-edit" style="grid-template-columns: 1fr; margin-top:10px;">
-                    <button class="btn-adm-status" style="background:${isBlocked ? 'var(--success)' : 'var(--danger)'}; color:#fff; font-weight:700;" 
-                        onclick="toggleCompanyBlockMaster(${c.id}, '${c.status}')">
-                        ${isBlocked ? '🟢 Desbloquear e Ativar Loja' : '🔴 Bloquear Loja (Inadimplente)'}
-                    </button>
-                </div>
-            </div>`;
+        container.innerHTML += `<div class="inventory-card" style="border-left: 4px solid ${isBlocked ? 'var(--danger)' : 'var(--success)'};"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>${c.name}</h4><span style="font-size:10px; font-weight:900; padding:2px 6px; border-radius:4px; background:${isBlocked ? 'var(--danger)' : 'var(--success)'}; color:#000;">${c.status.toUpperCase()}</span></div><p style="font-size:12px; margin: 6px 0; color:var(--text-muted);">🔑 Convite: <strong style="color:var(--primary)">${c.invite_code}</strong> | 🛵 Frete: R$ ${c.delivery_fee.toFixed(2)}<br>📱 Dono: ${c.phone_adm} | 🔐 Senha: ${c.password_adm}</p><div class="inventory-row-edit" style="grid-template-columns: 1fr; margin-top:10px;"><button class="btn-adm-status" style="background:${isBlocked ? 'var(--success)' : 'var(--danger)'}; color:#fff; font-weight:700;" onclick="toggleCompanyBlockMaster(${c.id}, '${c.status}')">${isBlocked ? '🟢 Desbloquear Loja' : '🔴 Bloquear Loja'}</button></div></div>`;
     });
 }
-
-async function toggleCompanyBlockMaster(id, currentStatus) {
-    if(!currentUser || currentUser.role !== 'superadmin') return;
-    const nextStatus = currentStatus === 'active' ? 'blocked' : 'active';
-    
-    await supabaseClient.from('pods_companies').update({ status: nextStatus }).eq('id', id);
-    showPremiumNotification("Escopo Modificado", `A empresa foi alterada para ${nextStatus.toUpperCase()} com sucesso.`, "success");
-    renderSuperCompaniesManager();
-}
-
+async function toggleCompanyBlockMaster(id, currentStatus) { await supabaseClient.from('pods_companies').update({ status: currentStatus === 'active' ? 'blocked' : 'active' }).eq('id', id); renderSuperCompaniesManager(); }
 async function renderSuperGlobalInventory() {
-    const container = document.getElementById('super-global-inventory-container'); if(!container) return;
-    container.innerHTML = '';
-    
+    const container = document.getElementById('super-global-inventory-container'); if(!container) return; container.innerHTML = '';
     const { data: products } = await supabaseClient.from('pods_products').select('*, pods_companies(name)');
-    if(products) products.forEach(p => {
-        const storeName = p.pods_companies ? p.pods_companies.name : "N/A";
-        container.innerHTML += `
-            <div class="inventory-card" style="border-left: 2px solid var(--border);">
-                <span style="font-size:10px; color:var(--primary); font-weight:700;">🏬 LOJA: ${storeName.toUpperCase()}</span>
-                <h4 style="margin-top:3px;">${p.name}</h4>
-                <p style="font-size:12px; color:var(--text-muted)">Estoque Atual: <strong>${p.stock} unidades</strong> | Preço: R$ ${p.price.toFixed(2)}</p>
-            </div>`;
-    });
+    if(products) products.forEach(p => { container.innerHTML += `<div class="inventory-card" style="border-left: 2px solid var(--border);"><span style="font-size:10px; color:var(--primary); font-weight:700;">🏬 LOJA: ${p.pods_companies ? p.pods_companies.name.toUpperCase() : "N/A"}</span><h4 style="margin-top:3px;">${p.name}</h4><p style="font-size:12px; color:var(--text-muted)">Estoque: <strong>${p.stock}</strong> | R$ ${p.price.toFixed(2)}</p></div>`; });
 }
