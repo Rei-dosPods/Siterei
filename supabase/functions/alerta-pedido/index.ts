@@ -1,8 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.14.0";
-import admin from "npm:firebase-admin@11.11.1"; // Importa o motor oficial do Google
+import admin from "npm:firebase-admin@11.11.1";
 
-// ⚙️ Inicializa o Firebase Admin com a chave que guardamos no cofre do Supabase
+// ⚙️ Inicializa o motor do Firebase Admin com a chave segura do cofre
 const serviceAccountStr = Deno.env.get('FIREBASE_SERVICE_ACCOUNT');
 
 if (serviceAccountStr && !admin.apps.length) {
@@ -19,55 +19,94 @@ if (serviceAccountStr && !admin.apps.length) {
 
 serve(async (req) => {
     try {
-        // 1. Recebe o disparo do Webhook
+        // 1. Recebe a carga do Webhook
         const payload = await req.json();
-        const novaOrdem = payload.record;
+        const ordemAtual = payload.record;
+        const ordemAntiga = payload.old_record;
 
-        if (payload.type !== 'INSERT' || !novaOrdem) {
-            return new Response("Ignorado: Não é uma nova ordem.", { status: 200 });
+        if (!ordemAtual) {
+            return new Response("Ignorado: Nenhuma ordem processada.", { status: 200 });
         }
 
-        console.log(`🚨 Novo pedido detectado: Ordem #${novaOrdem.id}`);
+        console.log(`🚨 Gatilho ativado para Ordem #${ordemAtual.id} | Tipo: ${payload.type}`);
 
-        // 2. Conecta no banco passando por cima das regras (Modo Servidor)
+        // 2. Conecta no Supabase passando por cima das regras RLS (Modo Deus/Servidor)
         const supabase = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         );
 
-        // 3. Busca o Push Token do Lojista
-        const { data: lojista } = await supabase
-            .from('pods_users')
-            .select('push_token')
-            .eq('company_id', novaOrdem.company_id)
-            .eq('role', 'vendor')
-            .single();
-
-        if (!lojista || !lojista.push_token) {
-            console.log("❌ Lojista não tem push_token ativo.");
-            return new Response("Sem push_token", { status: 200 });
+        // ==========================================
+        // 🚨 CENÁRIO 1: NOVO PEDIDO (Avisa o Lojista)
+        // ==========================================
+        if (payload.type === 'INSERT') {
+            const { data: lojista } = await supabase
+                .from('pods_users')
+                .select('push_token')
+                .eq('company_id', ordemAtual.company_id)
+                .eq('role', 'vendor')
+                .single();
+            
+            if (lojista?.push_token) {
+                await admin.messaging().send({
+                    token: lojista.push_token,
+                    notification: { 
+                        title: '🚨 NOVO PEDIDO NA LOJA!', 
+                        body: `Ordem #${ordemAtual.id} - Faturamento: R$ ${ordemAtual.total_price}. Vai preparar!` 
+                    },
+                    data: { url: '/' },
+                    // ⚡ MOTOR DE ALTA PRIORIDADE (FURA BLOQUEIO DE BATERIA DO ANDROID/IOS)
+                    android: { 
+                        priority: 'high', 
+                        notification: { sound: 'default', color: '#00DFD8' } 
+                    },
+                    webpush: { 
+                        headers: { Urgency: 'high' } 
+                    }
+                });
+                console.log("🔥 Push de NOVO PEDIDO enviado ao Lojista!");
+            } else {
+                console.log("❌ Lojista não possui push_token ativo.");
+            }
         }
-
-        // 4. Monta a Notificação que vai acordar o celular
-        const message = {
-            notification: {
-                title: '🚨 NOVO PEDIDO NA LOJA!',
-                body: `Ordem #${novaOrdem.id} no valor de R$ ${novaOrdem.total_price}. Vai preparar!`
-            },
-            data: {
-                url: '/' 
-            },
-            token: lojista.push_token // O endereço exato do celular do lojista
-        };
-
-        // 5. Dispara o míssil via Firebase Admin (Padrão HTTP v1)
-        const fcmResult = await admin.messaging().send(message);
-        console.log("🔥 Push disparado com sucesso!", fcmResult);
+        
+        // ==========================================
+        // 🛵 CENÁRIO 2: MUDANÇA DE STATUS (Avisa o Cliente)
+        // ==========================================
+        else if (payload.type === 'UPDATE' && ordemAntiga && ordemAtual.status !== ordemAntiga.status) {
+            const { data: cliente } = await supabase
+                .from('pods_users')
+                .select('push_token')
+                .eq('phone', ordemAtual.client_phone)
+                .single();
+            
+            if (cliente?.push_token) {
+                await admin.messaging().send({
+                    token: cliente.push_token,
+                    notification: { 
+                        title: 'Atualização Logística 🛵', 
+                        body: `Seu pedido #${ordemAtual.id} mudou para: ${ordemAtual.status.toUpperCase()}` 
+                    },
+                    data: { url: '/' },
+                    // ⚡ MOTOR DE ALTA PRIORIDADE (FURA BLOQUEIO DE BATERIA DO ANDROID/IOS)
+                    android: { 
+                        priority: 'high', 
+                        notification: { sound: 'default', color: '#00DFD8' } 
+                    },
+                    webpush: { 
+                        headers: { Urgency: 'high' } 
+                    }
+                });
+                console.log("🔥 Push de ATUALIZAÇÃO LOGÍSTICA enviado ao Cliente!");
+            } else {
+                console.log("❌ Cliente não possui push_token ativo.");
+            }
+        }
 
         return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
 
     } catch (error) {
-        console.error("💥 Erro fatal no Back-End:", error);
+        console.error("💥 Erro fatal na Edge Function:", error);
         return new Response(JSON.stringify({ error: error.message }), { status: 500 });
     }
 });

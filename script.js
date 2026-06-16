@@ -1,4 +1,6 @@
-// CONFIGURAÇÕES DO SEU SUPABASE
+// ====================================================
+// 🚀 CONFIGURAÇÕES DO SEU SUPABASE
+// ====================================================
 const SUPABASE_URL = "https://wcjzrdovqnyytveospck.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndjanpyZG92cW55eXR2ZW9zcGNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExOTExNDcsImV4cCI6MjA5Njc2NzE0N30.cSXeFxYnD24yNP-zIlhIONLsHx-oVDRg8OI9aSEL7oY";
 
@@ -221,9 +223,6 @@ function showPremiumNotification(title, message, type = "success") {
     }, 5500);
 }
 
-// Mantida vazia caso algum HTML antigo ainda chame
-function closeNotificationModal() {} 
-
 // ====================================================
 // 🔐 AUTENTICAÇÃO E LOGIN
 // ====================================================
@@ -343,12 +342,43 @@ function carregarBibliotecasFirebase() {
     });
 }
 
+// ====================================================
+// 🏪 CONTROLE DE EXPEDIENTE INTELIGENTE
+// ====================================================
 function syncStoreStatusInterface(isOpen) {
-    isStoreOpenGlobal = isOpen; const badge = document.getElementById('store-status-badge');
-    if(badge) { badge.innerText = isOpen ? "Aberto" : "Fechado"; badge.className = "status-badge-premium " + (isOpen ? "aberto" : "fechado"); }
+    isStoreOpenGlobal = isOpen; 
+    
+    const badge = document.getElementById('store-status-badge');
+    if(badge) { 
+        badge.innerText = isOpen ? "Aberto" : "Fechado"; 
+        badge.className = "status-badge-premium " + (isOpen ? "aberto" : "fechado"); 
+    }
+
+    const botoesExpediente = document.querySelectorAll('button[onclick*="toggleStoreStatus"]');
+    botoesExpediente.forEach(btn => {
+        btn.innerText = isOpen ? "⏸️ Pausar Expediente (Fechar Loja)" : "▶️ Iniciar Expediente (Abrir Loja)";
+        btn.style.opacity = "1";
+        btn.style.pointerEvents = "auto";
+    });
 }
+
 async function fetchStoreStatusInitial() { const { data } = await supabaseClient.from('store_status').select('is_open').eq('id', 1).single(); if(data) syncStoreStatusInterface(data.is_open); }
-async function toggleStoreStatus() { const novoEstado = !isStoreOpenGlobal; await supabaseClient.from('store_status').update({ is_open: novoEstado }).eq('id', 1); }
+
+async function toggleStoreStatus(btnElement) { 
+    if (btnElement) {
+        btnElement.innerText = "Sincronizando com Servidor...";
+        btnElement.style.opacity = "0.7";
+        btnElement.style.pointerEvents = "none";
+    }
+
+    const novoEstado = !isStoreOpenGlobal; 
+    const { error } = await supabaseClient.from('store_status').update({ is_open: novoEstado }).eq('id', 1); 
+    
+    if (error) {
+        showPremiumNotification("Erro", "Falha ao comunicar com o servidor.", "error");
+        syncStoreStatusInterface(isStoreOpenGlobal); 
+    }
+}
 
 // ====================================================
 // 🎛️ ESCUTA EM TEMPO REAL
@@ -615,4 +645,61 @@ async function renderSuperGlobalInventory() {
     const container = document.getElementById('super-global-inventory-container'); if(!container) return; container.innerHTML = '';
     const { data: products } = await supabaseClient.from('pods_products').select('*, pods_companies(name)');
     if(products) products.forEach(p => { container.innerHTML += `<div class="inventory-card" style="border-left: 2px solid var(--border);"><span style="font-size:10px; color:var(--primary); font-weight:700;">🏬 LOJA: ${p.pods_companies ? p.pods_companies.name.toUpperCase() : "N/A"}</span><h4 style="margin-top:3px;">${p.name}</h4><p style="font-size:12px; color:var(--text-muted)">Estoque: <strong>${p.stock}</strong> | R$ ${p.price.toFixed(2)}</p></div>`; });
+}
+
+// ====================================================
+// 📲 MOTOR DE INSTALAÇÃO DE APP (PWA)
+// ====================================================
+let instaladorPWA;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    instaladorPWA = e;
+    mostrarBotaoInstalarApp();
+});
+
+function mostrarBotaoInstalarApp() {
+    let btnInstalar = document.getElementById('btn-instalar-pwa');
+    
+    if (!btnInstalar) {
+        btnInstalar = document.createElement('button');
+        btnInstalar.id = 'btn-instalar-pwa';
+        btnInstalar.innerHTML = '📲 Baixar App';
+        btnInstalar.style.cssText = `
+            position: fixed;
+            bottom: 25px;
+            right: 25px;
+            z-index: 999999;
+            background: var(--primary, #00DFD8);
+            color: #000;
+            padding: 12px 24px;
+            border-radius: 50px;
+            font-weight: 900;
+            border: none;
+            box-shadow: 0 5px 20px rgba(0, 223, 216, 0.4);
+            cursor: pointer;
+            text-transform: uppercase;
+            font-size: 13px;
+            animation: pulse-pwa 2s infinite;
+        `;
+        
+        const style = document.createElement('style');
+        style.innerHTML = `@keyframes pulse-pwa { 0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 223, 216, 0.7); } 70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(0, 223, 216, 0); } 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 223, 216, 0); } }`;
+        document.head.appendChild(style);
+
+        document.body.appendChild(btnInstalar);
+
+        btnInstalar.addEventListener('click', async () => {
+            if (instaladorPWA) {
+                instaladorPWA.prompt(); 
+                const { outcome } = await instaladorPWA.userChoice;
+                if (outcome === 'accepted') {
+                    btnInstalar.style.display = 'none';
+                }
+                instaladorPWA = null;
+            }
+        });
+    } else {
+        btnInstalar.style.display = 'block';
+    }
 }
