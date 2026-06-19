@@ -364,37 +364,32 @@ async function finalizarPedidoCliente(product) {
     try {
         const orderId = `HUB-${Math.floor(100000 + Math.random()*900000)}`;
         
-        // 1. Registra o Pedido na loja (Nomes das colunas corrigidos para bater com o seu banco)
+        // 1. REGISTRA O PEDIDO NA LOJA
         const { error: errOrder } = await supabaseClient.from('pods_orders').insert([{ 
-            company_id: 1,
-            product_name: product.name, 
-            flavor: selectedFlavor, 
-            product_price: product.price, 
-            total_price: product.price,
-            delivery_price: 0,
-            payment_method: pay, 
-            change_needed: trocoText, 
-            client_address: addr, 
-            client_phone: phone,
-            client_name: clientName,
-            status: 'Pendente' 
+            company_id: 1, product_name: product.name, flavor: selectedFlavor, 
+            product_price: product.price, total_price: product.price, delivery_price: 0,
+            payment_method: pay, change_needed: trocoText, client_address: addr, 
+            client_phone: phone, client_name: clientName, status: 'Pendente' 
         }]);
 
-        if (errOrder) {
-            console.error("Erro no Supabase (pods_orders):", errOrder);
-            throw errOrder;
-        }
+        if (errOrder) throw errOrder;
 
         // 2. INTEGRAÇÃO FINANCEIRA AUTOMÁTICA
-        // 2a. Registra Entrada (Venda)
         await supabaseClient.from('transactions').insert([{ type: 'INCOME', amount: product.price, description: `Venda Site: ${product.name} (${selectedFlavor})`, category: 'Vendas', payment_method: pay }]);
-        
-        // 2b. Registra Saída (Custo do Produto para abater o lucro)
         const custo = parseFloat(product.cost_price || 0);
         if (custo > 0) {
             await supabaseClient.from('transactions').insert([{ type: 'EXPENSE', amount: custo, description: `Custo Mercadoria: ${product.name}`, category: 'Custo Produto', payment_method: 'Interno' }]);
         }
 
+        // 3. BAIXA NO ESTOQUE AUTOMÁTICA (A MÁGICA ACONTECE AQUI)
+        const currentFlavorStock = parseInt(product.flavors[selectedFlavor]) || 0;
+        const newFlavorStock = currentFlavorStock > 0 ? currentFlavorStock - 1 : 0;
+        const updatedFlavors = { ...product.flavors, [selectedFlavor]: newFlavorStock };
+        const newTotalStock = Object.values(updatedFlavors).reduce((acc, val) => acc + parseInt(val), 0);
+
+        await supabaseClient.from('pods_products').update({ flavors: updatedFlavors, stock: newTotalStock }).eq('id', product.id);
+
+        // 4. MENSAGEM DO WHATSAPP
         const msg = `💨 *NOVO PEDIDO - HUB STORE* 💨\n\n📌 *Ordem:* ${orderId}\n👤 *Cliente:* ${clientName}\n📍 *Endereço:* ${addr}\n📞 *Telefone:* ${phone}\n📦 *Pedido:* ${product.name}\n🎨 *Sabor:* ${selectedFlavor}\n\n💳 *Pagamento:* ${pay} (${trocoText})\n💵 *Total:* R$ ${parseFloat(product.price).toFixed(2)}`;
         
         closeModal('buy-modal');
