@@ -4,13 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hub Store - Premium</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: { colors: { premium: { dark: '#09090b', card: 'rgba(24, 24, 27, 0.7)', primary: '#00DFD8', primaryHover: '#00b5b0' } } }
+            }
+        }
+    </script>
+
     <style>
         /* =========================================
            ESTILOS BASE E PREMIUM DARK THEME
            ========================================= */
         :root {
             --background: #09090b;
-            --surface: rgba(24, 24, 27, 0.7); /* Efeito Vidro */
+            --surface: rgba(24, 24, 27, 0.7);
             --border: rgba(255, 255, 255, 0.1);
             --primary: #00DFD8;
             --primary-glow: rgba(0, 223, 216, 0.3);
@@ -21,125 +34,66 @@
             background-color: var(--background); 
             background-image: radial-gradient(circle at 50% 0%, rgba(0, 223, 216, 0.05) 0%, transparent 50%);
             color: #fff; font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 0; 
-            min-height: 100vh;
+            min-height: 100vh; overflow-x: hidden;
         }
         input, select { outline: none; }
         
-        /* UTILITARIOS DE TELA */
-        .screen { display: none; padding: 20px; max-width: 1200px; margin: 0 auto; opacity: 0; transition: opacity 0.4s ease; }
+        /* TELAS E ANIMAÇÕES */
+        .screen { display: none; opacity: 0; transition: opacity 0.4s ease; width: 100%; max-width: 1200px; margin: 0 auto; padding: 20px;}
         .active-screen { display: block; opacity: 1; animation: slideUpFade 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        
-        @keyframes slideUpFade { 
-            from { opacity: 0; transform: translateY(20px); } 
-            to { opacity: 1; transform: translateY(0); } 
-        }
+        @keyframes slideUpFade { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* HEADER E LOGO */
-        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 1px solid var(--border); padding-bottom: 15px; }
-        .logo-text { font-size: 26px; font-weight: 900; margin: 0; letter-spacing: -0.5px; }
-        .logo-text span { color: var(--primary); text-shadow: 0 0 15px var(--primary-glow); }
-
-        /* BOTOES E FORMS */
-        .btn-primary { 
-            background: var(--primary); color: #000; border: none; padding: 14px 20px; 
-            border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; width: 100%; 
-            font-size: 15px; position: relative; overflow: hidden;
-        }
-        .btn-primary:hover:not([disabled]) { 
-            transform: translateY(-2px); box-shadow: 0 8px 25px var(--primary-glow); 
-        }
-        .btn-primary:active:not([disabled]) { transform: translateY(1px); }
+        /* BOTOES E FORMS ORIGINAIS */
+        .btn-primary { background: var(--primary); color: #000; border: none; padding: 14px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; width: 100%; font-size: 15px; }
+        .btn-primary:hover:not([disabled]) { transform: translateY(-2px); box-shadow: 0 8px 25px var(--primary-glow); }
         .btn-outline { background: transparent; border: 1px solid var(--primary); color: var(--primary); padding: 8px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; }
         .btn-outline:hover { background: var(--primary-glow); }
 
         .form-group { margin-bottom: 15px; text-align: left; }
-        .form-group label { display: block; font-size: 13px; font-weight: bold; margin-bottom: 6px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-        .form-group input, .form-group select { 
-            width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border); color: #fff; 
-            padding: 14px; border-radius: 8px; box-sizing: border-box; transition: 0.3s; 
-        }
+        .form-group label { display: block; font-size: 13px; font-weight: bold; margin-bottom: 6px; color: var(--text-muted); text-transform: uppercase; }
+        .form-group input, .form-group select { width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border); color: #fff; padding: 14px; border-radius: 8px; transition: 0.3s; }
         .form-group input:focus, .form-group select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
 
         /* LOGIN SCREEN */
-        .login-container { 
-            max-width: 400px; margin: 50px auto; background: var(--surface); padding: 40px 30px; 
-            border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 20px 40px rgba(0,0,0,0.5); 
-            text-align: center; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-        }
-        .auth-link { color: var(--primary); font-size: 13px; cursor: pointer; text-decoration: none; margin-top: 20px; display: inline-block; transition: 0.2s; font-weight: bold; }
-        .auth-link:hover { text-shadow: 0 0 8px var(--primary-glow); }
-
-        /* CARDS DA VITRINE */
-        .product-card { 
-            background: var(--surface); border: 1px solid var(--border); padding: 15px; 
-            border-radius: 16px; display: flex; flex-direction: column; justify-content: space-between; 
-            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); backdrop-filter: blur(10px);
-        }
+        .login-container { max-width: 400px; margin: 50px auto; background: var(--surface); padding: 40px 30px; border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 20px 40px rgba(0,0,0,0.5); text-align: center; backdrop-filter: blur(12px); }
+        
+        /* VITRINE CARDS */
+        .product-card { background: var(--surface); border: 1px solid var(--border); padding: 15px; border-radius: 16px; display: flex; flex-direction: column; justify-content: space-between; transition: all 0.3s; backdrop-filter: blur(10px); }
         .product-card:hover { transform: translateY(-5px); border-color: rgba(0, 223, 216, 0.5); box-shadow: 0 15px 30px rgba(0,0,0,0.6), 0 0 20px var(--primary-glow); }
-        .product-image { width: 100%; height: 220px; object-fit: cover; border-radius: 10px; margin-bottom: 15px; background: #000; transition: 0.3s; }
-        .product-card:hover .product-image { transform: scale(1.02); }
+        .product-image { width: 100%; height: 220px; object-fit: cover; border-radius: 10px; margin-bottom: 15px; background: #000; }
 
-        /* MODAIS ANIMADOS */
-        .modal { 
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.6); backdrop-filter: blur(5px);
-            display: flex; align-items: center; justify-content: center; z-index: 1000;
-            opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
-        }
+        /* MODAIS */
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(5px); display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
         .modal.active { opacity: 1; pointer-events: auto; }
-        
-        .premium-popup { 
-            background: var(--surface); border: 1px solid var(--border); padding: 30px; 
-            border-radius: 20px; width: 90%; max-width: 450px; max-height: 90vh; overflow-y: auto;
-            backdrop-filter: blur(15px); box-shadow: 0 25px 50px rgba(0,0,0,0.5);
-            transform: scale(0.9) translateY(20px); transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-        }
+        .premium-popup { background: var(--surface); border: 1px solid var(--border); padding: 30px; border-radius: 20px; width: 90%; max-width: 450px; max-height: 90vh; overflow-y: auto; backdrop-filter: blur(15px); box-shadow: 0 25px 50px rgba(0,0,0,0.5); transform: scale(0.9) translateY(20px); transition: all 0.4s; }
         .modal.active .premium-popup { transform: scale(1) translateY(0); }
-        
-        .flavor-selector-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; margin-top: 5px; }
-        .flavor-btn { 
-            background: rgba(0,0,0,0.4); border: 1px solid var(--border); color: #fff; padding: 10px; 
-            border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: bold; transition: all 0.2s ease; 
-        }
-        .flavor-btn:hover:not([disabled]) { background: rgba(255,255,255,0.1); }
-        .flavor-btn.selected { border-color: var(--primary); background: rgba(0, 223, 216, 0.15); box-shadow: inset 0 0 10px var(--primary-glow); color: var(--primary); }
-        
-        .checkout-summary { background: rgba(0,0,0,0.4); padding: 15px; border-radius: 12px; margin: 20px 0; border: 1px solid var(--border); }
-        .summary-line { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 8px; color: #ccc; }
-        .summary-line.total { font-size: 18px; color: #fff; font-weight: 900; }
-        
-        .hold-btn { position: relative; width: 100%; background: #000; border: 1px solid var(--border); color: #fff; padding: 16px; border-radius: 12px; font-weight: bold; cursor: pointer; overflow: hidden; transition: 0.2s; }
-        .hold-btn:active { transform: scale(0.98); }
-        .hold-progress-bar { position: absolute; top: 0; left: 0; height: 100%; background: linear-gradient(90deg, transparent, var(--primary)); width: 0%; transition: width 0.1s linear; opacity: 0.5; }
-        .hold-text { position: relative; z-index: 2; font-size: 15px; }
-        
-        /* TOAST NOTIFICATIONS (Substituindo os Alerts) */
+
+        .flavor-btn { background: rgba(0,0,0,0.4); border: 1px solid var(--border); color: #fff; padding: 10px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: bold; transition: 0.2s; }
+        .flavor-btn.selected { border-color: var(--primary); background: rgba(0, 223, 216, 0.15); color: var(--primary); }
+
+        /* TOAST NOTIFICATIONS */
         #toast-container { position: fixed; top: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 12px; pointer-events: none; }
-        .toast { 
-            background: var(--surface); backdrop-filter: blur(10px); border-left: 4px solid var(--primary); 
-            padding: 16px 24px; border-radius: 12px; color: #fff; box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
-            display: flex; align-items: center; gap: 15px; pointer-events: auto;
-            animation: slideInRight 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; 
-        }
+        .toast { background: var(--surface); backdrop-filter: blur(10px); border-left: 4px solid var(--primary); padding: 16px 24px; border-radius: 12px; color: #fff; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 15px; animation: slideInRight 0.5s forwards; }
         .toast.error { border-left-color: var(--danger); }
         .toast.fadeOut { animation: fadeOutRight 0.4s forwards; }
-        .toast-icon { font-size: 24px; }
-        .toast-content strong { display: block; font-size: 15px; margin-bottom: 2px; }
-        .toast-content span { font-size: 13px; color: var(--text-muted); }
-        
-        @keyframes slideInRight { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        @keyframes fadeOutRight { from { transform: translateX(0); opacity: 1; } to { transform: translateX(120%); opacity: 0; } }
+        @keyframes slideInRight { from { transform: translateX(120%); } to { transform: translateX(0); } }
+        @keyframes fadeOutRight { from { transform: translateX(0); } to { transform: translateX(120%); } }
+
+        /* Scrollbar customizada para os grids */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--background); }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
     <div id="toast-container"></div>
 
-    <div id="login-screen" class="screen active-screen">
+    <div id="login-screen" class="active-screen" style="padding: 20px; width: 100%;">
         <div class="login-container">
-            <h1 class="logo-text" style="margin-bottom: 5px;">HUB <span>STORE</span></h1>
-            <p id="auth-subtitle" style="color: var(--text-muted); font-size: 14px; margin-bottom: 30px;">Acesso Exclusivo</p>
+            <h1 class="text-3xl font-black mb-1 tracking-tighter">HUB <span class="text-premium-primary">STORE</span></h1>
+            <p id="auth-subtitle" class="text-zinc-400 text-sm mb-8">Acesso Exclusivo</p>
             
             <form id="form-login" onsubmit="handleLogin(event)">
                 <div class="form-group">
@@ -150,95 +104,183 @@
                     <label>Senha ou Código</label>
                     <input type="password" id="login-code" placeholder="Digite sua senha" required autocomplete="off">
                 </div>
-                <button type="submit" class="btn-primary" style="margin-top: 15px;">Entrar na Loja</button>
-                <span class="auth-link" onclick="toggleAuthMode('register')">Não tem conta? Cadastre-se aqui</span>
+                <button type="submit" class="btn-primary mt-4">Entrar na Loja</button>
+                <span class="text-premium-primary text-sm cursor-pointer underline mt-5 inline-block font-bold" onclick="toggleAuthMode('register')">Não tem conta? Cadastre-se aqui</span>
             </form>
 
             <form id="form-register" onsubmit="handleRegister(event)" style="display: none;">
                 <div class="form-group"><label>Seu Nome Completo</label><input type="text" id="reg-name" placeholder="Como quer ser chamado?" required autocomplete="off"></div>
                 <div class="form-group"><label>Telefone (WhatsApp)</label><input type="text" id="reg-phone" placeholder="Ex: 42999999999" required autocomplete="off"></div>
                 <div class="form-group"><label>Crie uma Senha</label><input type="password" id="reg-password" placeholder="Senha para acessar a loja" required autocomplete="off"></div>
-                <button type="submit" class="btn-primary" style="margin-top: 15px;">Criar Minha Conta</button>
-                <span class="auth-link" onclick="toggleAuthMode('login')">Já tem conta? Faça Login</span>
+                <button type="submit" class="btn-primary mt-4">Criar Minha Conta</button>
+                <span class="text-premium-primary text-sm cursor-pointer underline mt-5 inline-block font-bold" onclick="toggleAuthMode('login')">Já tem conta? Faça Login</span>
             </form>
         </div>
     </div>
 
-    <div id="store-screen" class="screen">
-        <header>
-            <h1 class="logo-text">HUB <span>STORE</span></h1>
-            <div style="display: flex; gap: 15px; align-items: center;">
-                <button id="admin-btn-header" class="btn-outline" style="display: none;" onclick="showAdminPanel()">⚙️ Estoque</button>
-                <button onclick="logout()" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-weight: bold; transition: 0.2s;">Sair</button>
+    <div id="app-layout" class="hidden min-h-screen flex w-full">
+        
+        <aside id="admin-sidebar" class="w-64 bg-premium-card border-r border-zinc-800 flex-col hidden z-10 shadow-2xl backdrop-blur-md">
+            <div class="p-6 border-b border-zinc-800 flex items-center gap-3">
+                <i data-lucide="zap" class="text-premium-primary w-6 h-6"></i>
+                <span class="font-bold text-xl tracking-tighter">HUB <span class="text-premium-primary">ADMIN</span></span>
             </div>
-        </header>
-        <div id="products-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 25px;"></div>
-    </div>
+            
+            <nav class="flex-1 p-4 space-y-2 mt-2" id="sidebar-menu">
+                <button onclick="navigate('store')" id="btn-nav-store" class="w-full flex items-center gap-3 px-4 py-3 text-premium-primary bg-zinc-800/50 rounded-lg transition-all hover:translate-x-1 font-medium">
+                    <i data-lucide="store" class="w-5 h-5"></i><span>Vitrine</span>
+                </button>
+                <button onclick="navigate('admin')" id="btn-nav-admin" class="w-full flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800/50 rounded-lg transition-all hover:translate-x-1 font-medium">
+                    <i data-lucide="package" class="w-5 h-5"></i><span>Gerir Estoque</span>
+                </button>
+                <button onclick="navigate('dashboard')" id="btn-nav-dashboard" class="w-full flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800/50 rounded-lg transition-all hover:translate-x-1 font-medium">
+                    <i data-lucide="pie-chart" class="w-5 h-5"></i><span>Dashboard</span>
+                </button>
+                <button onclick="navigate('cashflow')" id="btn-nav-cashflow" class="w-full flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800/50 rounded-lg transition-all hover:translate-x-1 font-medium">
+                    <i data-lucide="wallet" class="w-5 h-5"></i><span>Fluxo de Caixa</span>
+                </button>
+                <button onclick="navigate('bills')" id="btn-nav-bills" class="w-full flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800/50 rounded-lg transition-all hover:translate-x-1 font-medium">
+                    <i data-lucide="receipt" class="w-5 h-5"></i><span>Contas a Pagar</span>
+                </button>
+            </nav>
 
-    <div id="admin-screen" class="screen">
-        <header>
-            <h1 class="logo-text">Gestão de <span>Estoque</span></h1>
-            <button class="btn-outline" onclick="showStorefront()">Voltar para Loja</button>
-        </header>
-        <div style="background: var(--surface); padding: 25px; border-radius: 16px; border: 1px solid var(--border); backdrop-filter: blur(10px);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
-                <h3 style="margin: 0;">Dispositivos Cadastrados</h3>
-                <button class="btn-primary" style="width: auto; padding: 10px 20px;" onclick="openModal('add-product-modal')">+ Novo Modelo</button>
+            <div class="p-4 border-t border-zinc-800">
+                <button onclick="logout()" class="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:bg-red-500/10 hover:text-red-300 rounded-lg transition-all font-medium">
+                    <i data-lucide="log-out" class="w-5 h-5"></i><span>Sair da Conta</span>
+                </button>
             </div>
-            <div id="admin-stock-list"></div>
-        </div>
+        </aside>
+
+        <main class="flex-1 w-full relative">
+            
+            <div id="view-store" class="screen">
+                <header class="flex justify-between items-center mb-8 border-b border-zinc-800 pb-4">
+                    <h1 class="text-3xl font-black tracking-tighter">HUB <span class="text-premium-primary">STORE</span></h1>
+                    <div class="flex items-center gap-4">
+                        <span id="welcome-text" class="text-zinc-400 text-sm hidden md:inline"></span>
+                        <button onclick="logout()" id="client-logout-btn" class="text-zinc-400 hover:text-white underline text-sm font-bold">Sair</button>
+                    </div>
+                </header>
+                <div id="products-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div>
+            </div>
+
+            <div id="view-admin" class="screen hidden">
+                <header class="mb-8 border-b border-zinc-800 pb-4">
+                    <h2 class="text-3xl font-black text-white">Gestão de <span class="text-premium-primary">Estoque</span></h2>
+                </header>
+                <div class="bg-premium-card p-6 rounded-2xl border border-zinc-800 backdrop-blur-md">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-lg font-bold">Dispositivos Cadastrados</h3>
+                        <button class="bg-premium-primary text-black font-bold py-2 px-4 rounded-lg hover:shadow-[0_0_15px_rgba(0,223,216,0.3)] transition" onclick="openModal('add-product-modal')">+ Novo Modelo</button>
+                    </div>
+                    <div id="admin-stock-list" class="space-y-6"></div>
+                </div>
+            </div>
+
+            <div id="view-dashboard" class="screen hidden">
+                <header class="mb-8 border-b border-zinc-800 pb-4">
+                    <h2 class="text-3xl font-black text-white">Painel <span class="text-premium-primary">Financeiro</span></h2>
+                    <p class="text-zinc-400 text-sm mt-1 flex items-center gap-2">Resumo de caixa <span class="flex h-2 w-2 relative"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-premium-primary opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-premium-primary"></span></span> Real-time</p>
+                </header>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div class="bg-premium-card p-6 rounded-2xl border border-zinc-800 hover:-translate-y-1 transition duration-300">
+                        <div class="flex justify-between items-center mb-4"><span class="text-zinc-400 font-medium">Entradas (Faturamento)</span><div class="bg-green-500/10 p-2 rounded-lg"><i data-lucide="trending-up" class="text-green-500 w-5 h-5"></i></div></div>
+                        <h3 id="card-income" class="text-3xl font-black text-white">R$ 0,00</h3>
+                    </div>
+                    <div class="bg-premium-card p-6 rounded-2xl border border-zinc-800 hover:-translate-y-1 transition duration-300">
+                        <div class="flex justify-between items-center mb-4"><span class="text-zinc-400 font-medium">Saídas (Custos/Despesas)</span><div class="bg-red-500/10 p-2 rounded-lg"><i data-lucide="trending-down" class="text-red-500 w-5 h-5"></i></div></div>
+                        <h3 id="card-expense" class="text-3xl font-black text-white">R$ 0,00</h3>
+                    </div>
+                    <div class="bg-premium-card p-6 rounded-2xl border border-premium-primary/30 relative overflow-hidden shadow-[0_0_20px_rgba(0,223,216,0.1)]">
+                        <div class="absolute top-0 right-0 w-32 h-32 bg-premium-primary/10 rounded-full -mr-10 -mt-10 blur-xl"></div>
+                        <div class="flex justify-between items-center mb-4 relative z-10"><span class="text-premium-primary font-medium">Lucro Líquido (Saldo)</span><div class="bg-premium-primary/20 p-2 rounded-lg"><i data-lucide="dollar-sign" class="text-premium-primary w-5 h-5"></i></div></div>
+                        <h3 id="card-balance" class="text-3xl font-black text-white relative z-10">R$ 0,00</h3>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="bg-premium-card p-6 rounded-2xl border border-zinc-800 lg:col-span-2"><h4 class="text-lg font-bold mb-4">Evolução de Entradas/Saídas (7 dias)</h4><div class="relative h-64 w-full"><canvas id="lineChart"></canvas></div></div>
+                    <div class="bg-premium-card p-6 rounded-2xl border border-zinc-800"><h4 class="text-lg font-bold mb-4">Divisão de Saídas</h4><div class="relative h-64 w-full flex justify-center"><canvas id="doughnutChart"></canvas></div></div>
+                </div>
+            </div>
+
+            <div id="view-cashflow" class="screen hidden">
+                <header class="mb-8 border-b border-zinc-800 pb-4"><h2 class="text-3xl font-black text-white">Fluxo de <span class="text-premium-primary">Caixa</span></h2></header>
+                <div class="bg-premium-card p-6 rounded-2xl border border-zinc-800 mb-8">
+                    <h3 class="text-lg font-bold mb-4">Lançamento Avulso</h3>
+                    <form id="form-transaction" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div><label class="block text-zinc-400 text-xs font-bold mb-2 uppercase">Tipo</label><select id="trans-type" class="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white"><option value="INCOME">Entrada (+)</option><option value="EXPENSE">Saída (-)</option></select></div>
+                        <div><label class="block text-zinc-400 text-xs font-bold mb-2 uppercase">Valor (R$)</label><input type="number" id="trans-value" step="0.01" class="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white" required></div>
+                        <div><label class="block text-zinc-400 text-xs font-bold mb-2 uppercase">Descrição</label><input type="text" id="trans-desc" class="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white" placeholder="Ex: Venda no PIX..." required></div>
+                        <div><label class="block text-zinc-400 text-xs font-bold mb-2 uppercase">Categoria</label><select id="trans-category" class="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white"><option value="Vendas">Vendas</option><option value="Custo Produto">Custo de Produto</option><option value="Contas">Contas</option><option value="Outros">Outros</option></select></div>
+                        <div class="md:col-span-4 flex justify-end"><button type="submit" class="bg-premium-primary text-black font-bold py-2 px-6 rounded-lg hover:shadow-[0_0_15px_rgba(0,223,216,0.3)] transition">Registrar Lançamento</button></div>
+                    </form>
+                </div>
+                <div class="bg-premium-card rounded-2xl border border-zinc-800 overflow-hidden">
+                    <div class="p-5 border-b border-zinc-800"><h4 class="font-bold text-white">Histórico de Transações</h4></div>
+                    <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="bg-zinc-900/50 text-zinc-400"><tr><th class="p-4">Descrição</th><th class="p-4">Categoria</th><th class="p-4">Data/Hora</th><th class="p-4 text-right">Valor</th></tr></thead><tbody id="history-table-body"></tbody></table></div>
+                </div>
+            </div>
+
+            <div id="view-bills" class="screen hidden">
+                <header class="mb-8 border-b border-zinc-800 pb-4"><h2 class="text-3xl font-black text-white">Contas a <span class="text-premium-primary">Pagar</span></h2></header>
+                <div class="bg-premium-card p-6 rounded-2xl border border-zinc-800 mb-8">
+                    <form id="form-bill" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div><label class="block text-zinc-400 text-xs font-bold mb-2 uppercase">Descrição / Favorecido</label><input type="text" id="bill-title" class="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white" required></div>
+                        <div><label class="block text-zinc-400 text-xs font-bold mb-2 uppercase">Vencimento</label><input type="date" id="bill-date" class="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white" required></div>
+                        <div><label class="block text-zinc-400 text-xs font-bold mb-2 uppercase">Valor (R$)</label><input type="number" id="bill-value" step="0.01" class="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white" required></div>
+                        <div class="md:col-span-3 flex justify-end"><button type="submit" class="bg-zinc-800 text-white font-bold py-2 px-6 rounded-lg border border-zinc-700 hover:bg-zinc-700 transition">Agendar Conta Pendente</button></div>
+                    </form>
+                </div>
+                <div class="bg-premium-card rounded-2xl border border-zinc-800 overflow-hidden">
+                    <div class="p-5 border-b border-zinc-800"><h4 class="font-bold text-white">Agenda de Despesas</h4></div>
+                    <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="bg-zinc-900/50 text-zinc-400"><tr><th class="p-4">Conta</th><th class="p-4">Vencimento</th><th class="p-4">Valor</th><th class="p-4">Status</th><th class="p-4 text-center">Ação</th></tr></thead><tbody id="bills-table-body"></tbody></table></div>
+                </div>
+            </div>
+
+        </main>
     </div>
 
     <div class="modal" id="buy-modal">
         <div class="modal-content premium-popup">
-            <h3 style="margin-top: 0; font-size: 20px;">Configurar Entrega</h3>
+            <h3 class="text-xl font-bold mb-4">Configurar Entrega</h3>
             <form id="order-form" onsubmit="return false;">
-                <div class="form-group">
-                    <label>Sabor Selecionado:</label>
-                    <div id="flavor-buttons-container" class="flavor-selector-grid"></div>
-                </div>
+                <div class="form-group"><label>Sabor Selecionado:</label><div id="flavor-buttons-container" class="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2"></div></div>
                 <div class="form-group"><label>Endereço de Destino</label><input type="text" id="client-address" required></div>
-                <div class="form-group">
-                    <label>Forma de Pagamento</label>
-                    <select id="buy-payment-method" onchange="toggleTrocoField()" required>
-                        <option value="" disabled selected>Selecione...</option><option value="Pix">Pix na Entrega</option><option value="Dinheiro">Dinheiro</option>
-                    </select>
+                <div class="form-group"><label>Forma de Pagamento</label><select id="buy-payment-method" onchange="toggleTrocoField()" required><option value="" disabled selected>Selecione...</option><option value="Pix">Pix na Entrega</option><option value="Dinheiro">Dinheiro</option></select></div>
+                <div class="form-group" id="troco-container" style="display: none;"><label>Precisa de Troco?</label><select id="buy-change-needed" onchange="toggleTrocoValorField()"><option value="Não">Não</option><option value="Sim">Sim</option></select><input type="number" step="0.01" id="buy-change-value" placeholder="Troco para quanto?" style="margin-top: 10px; display: none;"></div>
+                <div class="bg-black/40 p-4 rounded-xl my-4 border border-zinc-800">
+                    <div class="flex justify-between text-sm text-zinc-400 mb-1"><span>Dispositivo:</span><span id="summary-prod-price">R$ 0,00</span></div>
+                    <div class="flex justify-between text-sm text-premium-primary font-bold mb-3"><span>Logística:</span><span>GRÁTIS</span></div>
+                    <div class="flex justify-between text-lg text-white font-black border-t border-zinc-800 pt-3"><span>Total:</span><span id="summary-total-price">R$ 0,00</span></div>
                 </div>
-                <div class="form-group" id="troco-container" style="display: none;">
-                    <label>Precisa de Troco?</label>
-                    <select id="buy-change-needed" onchange="toggleTrocoValorField()"><option value="Não">Não</option><option value="Sim">Sim</option></select>
-                    <input type="number" step="0.01" id="buy-change-value" placeholder="Troco para quanto? (Ex: 100)" style="margin-top: 10px; display: none;">
+                <div class="relative w-full bg-black border border-zinc-800 rounded-xl overflow-hidden cursor-pointer mt-4" id="btn-hold-trigger">
+                    <div class="absolute top-0 left-0 h-full bg-premium-primary opacity-30 w-0" id="hold-progress-fill"></div>
+                    <div class="relative z-10 p-4 text-center font-bold text-white">Segure para Confirmar Ordem</div>
                 </div>
-                <div class="checkout-summary">
-                    <div class="summary-line"><span>Dispositivo:</span> <span id="summary-prod-price">R$ 0,00</span></div>
-                    <div class="summary-line"><span>Logística:</span> <span style="color: var(--primary); font-weight: bold;">GRÁTIS</span></div>
-                    <hr style="border-color: rgba(255,255,255,0.1); margin: 12px 0;">
-                    <div class="summary-line total"><span>Total:</span> <span id="summary-total-price">R$ 0,00</span></div>
-                </div>
-                <div class="hold-to-confirm-container">
-                    <button type="button" id="btn-hold-trigger" class="hold-btn"><div class="hold-progress-bar" id="hold-progress-fill"></div><span class="hold-text">Segure para Confirmar Ordem</span></button>
-                </div>
-                <button type="button" style="width: 100%; background: transparent; border: none; color: var(--text-muted); padding: 15px; border-radius: 8px; cursor: pointer; margin-top: 10px; font-weight: bold; transition: 0.2s;" onclick="closeModal('buy-modal')">Voltar</button>
+                <button type="button" class="w-full text-zinc-400 font-bold p-3 mt-2 hover:text-white transition" onclick="closeModal('buy-modal')">Voltar</button>
             </form>
         </div>
     </div>
 
     <div class="modal" id="add-product-modal">
         <div class="modal-content premium-popup">
-            <h3 style="margin-top: 0; font-size: 20px;">Adicionar Novo Modelo</h3>
+            <h3 class="text-xl font-bold mb-4">Adicionar Novo Modelo</h3>
             <form onsubmit="handleAddNewProduct(event)">
                 <div class="form-group"><label>Nome do Dispositivo</label><input type="text" id="new-prod-name" placeholder="Ex: Ignite V50" required></div>
-                <div class="form-group"><label>Preço (R$)</label><input type="number" step="0.01" id="new-prod-price" placeholder="Ex: 120.00" required></div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="form-group"><label>Preço de Venda (R$)</label><input type="number" step="0.01" id="new-prod-price" placeholder="120.00" required></div>
+                    <div class="form-group"><label>Custo Unitário (R$)</label><input type="number" step="0.01" id="new-prod-cost" placeholder="50.00" required></div>
+                </div>
                 <div class="form-group"><label>Puffs (Opcional)</label><input type="text" id="new-prod-puffs" placeholder="Ex: 5000"></div>
-                <div class="form-group"><label>URL da Imagem</label><input type="url" id="new-prod-image" placeholder="Link da foto do produto" required></div>
-                <button type="submit" class="btn-primary" style="margin-top: 10px;">Criar Modelo</button>
-                <button type="button" style="width: 100%; background: transparent; border: none; color: var(--text-muted); padding: 15px; border-radius: 8px; cursor: pointer; margin-top: 5px; font-weight: bold;" onclick="closeModal('add-product-modal')">Cancelar</button>
+                <div class="form-group"><label>URL da Imagem</label><input type="url" id="new-prod-image" placeholder="Link da foto" required></div>
+                <button type="submit" class="btn-primary mt-2">Criar Modelo</button>
+                <button type="button" class="w-full text-zinc-400 font-bold p-3 mt-2 hover:text-white transition" onclick="closeModal('add-product-modal')">Cancelar</button>
             </form>
         </div>
     </div>
 
-    <a href="https://api.whatsapp.com/send?phone=5542988141603&text=Olá! Estou no site e gostaria de tirar uma dúvida sobre os dispositivos." target="_blank" style="position: fixed; bottom: 25px; right: 25px; background-color: #25D366; color: #fff; width: 65px; height: 65px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 25px rgba(37,211,102,0.5); z-index: 999; text-decoration: none; transition: 0.3s; border: 2px solid rgba(255,255,255,0.2);">
-        <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" fill="currentColor" viewBox="0 0 16 16"><path d="M13.601 2.326A7.85 7.85 0 0 0 12.41 1.156C11.166.496 9.74.174 8.32.172A7.9 7.9 0 0 0 .173 8.061c0 1.503.393 2.97 1.14 4.28L0 16l3.73-.978a7.87 7.87 0 0 0 3.803.974c1.417-.001 2.822-.323 3.99-1.002A7.86 7.86 0 0 0 13.6 13.6a7.85 7.85 0 0 0 1.168-3.996c.002-1.417-.32-2.822-.967-3.991M10.534 11.3c-.326.112-1.344.405-2.13-.264-1.322-1.12-1.614-2.288-1.701-2.65-.088-.363-.047-.56.096-.708.125-.13.25-.3.374-.45.125-.15.166-.25.25-.417.083-.166.042-.312-.02-.457-.063-.146-.56-1.348-.767-1.85-.203-.491-.41-.424-.56-.432-.146-.008-.314-.008-.48-.008s-.438.063-.666.312c-.229.249-.875.855-.875 2.08s.9 2.406.996 2.54c.097.136 1.77 2.706 4.289 3.791.6.259 1.069.414 1.434.53.603.19 1.152.163 1.587.099.486-.07 1.488-.609 1.698-1.196.21-.587.21-1.09.147-1.197-.063-.107-.23-.172-.556-.334"/></svg>
+    <a href="https://api.whatsapp.com/send?phone=5542988141603&text=Olá! Estou no site e gostaria de tirar uma dúvida sobre os dispositivos." target="_blank" style="position: fixed; bottom: 25px; right: 25px; background-color: #25D366; color: #fff; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 25px rgba(37,211,102,0.5); z-index: 99; text-decoration: none; border: 2px solid rgba(255,255,255,0.2);">
+        <i data-lucide="message-circle" class="w-8 h-8 fill-current"></i>
     </a>
 
     <script src="script.js"></script>
