@@ -1,8 +1,8 @@
 // ====================================================
 // CONFIGURAÇÕES DO CLIENTE SUPABASE
 // ====================================================
-const SUPABASE_URL = "https://wcjzrdovqnyytveospck.supabase.co"; 
-const SUPABASE_KEY = "SUA_ANON_KEY_AQUI"; // Insira sua chave anon do supabase aqui
+const SUPABASE_URL = "https://wcjzrdovqnyytveospck.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndjanpyZG92cW55eXR2ZW9zcGNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExOTExNDcsImV4cCI6MjA5Njc2NzE0N30.cSXeFxYnD24yNP-zIlhIONLsHx-oVDRg8OI9aSEL7oY";
 
 const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
