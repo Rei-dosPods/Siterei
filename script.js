@@ -196,7 +196,7 @@ function renderProductsVitrine() {
 
     globalProductsCache.forEach(p => {
         const hasStock = p.stock > 0;
-        const imageUrl = p.image_url || 'https://via.placeholder.com/300x200/111/00DFD8?text=Sem+Foto';
+        const imageUrl = p.image || 'https://via.placeholder.com/300x200/111/00DFD8?text=Sem+Foto';
 
         grid.innerHTML += `
             <div class="product-card">
