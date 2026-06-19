@@ -364,9 +364,26 @@ async function finalizarPedidoCliente(product) {
     try {
         const orderId = `HUB-${Math.floor(100000 + Math.random()*900000)}`;
         
-        // 1. Registra o Pedido na loja
-        const { error: errOrder } = await supabaseClient.from('pods_orders').insert([{ order_number: orderId, product_name: product.name, flavor_selected: selectedFlavor, price: product.price, payment_method: pay, change_needed: trocoText, address: addr, phone: phone, status: 'Pendente' }]);
-        if (errOrder) throw errOrder;
+        // 1. Registra o Pedido na loja (Nomes das colunas corrigidos para bater com o seu banco)
+        const { error: errOrder } = await supabaseClient.from('pods_orders').insert([{ 
+            company_id: 1,
+            product_name: product.name, 
+            flavor: selectedFlavor, 
+            product_price: product.price, 
+            total_price: product.price,
+            delivery_price: 0,
+            payment_method: pay, 
+            change_needed: trocoText, 
+            client_address: addr, 
+            client_phone: phone,
+            client_name: clientName,
+            status: 'Pendente' 
+        }]);
+
+        if (errOrder) {
+            console.error("Erro no Supabase (pods_orders):", errOrder);
+            throw errOrder;
+        }
 
         // 2. INTEGRAÇÃO FINANCEIRA AUTOMÁTICA
         // 2a. Registra Entrada (Venda)
@@ -378,13 +395,17 @@ async function finalizarPedidoCliente(product) {
             await supabaseClient.from('transactions').insert([{ type: 'EXPENSE', amount: custo, description: `Custo Mercadoria: ${product.name}`, category: 'Custo Produto', payment_method: 'Interno' }]);
         }
 
-        const msg = `💨 *NOVO PEDIDO - HUB STORE* 💨\n\n📌 *Ordem:* ${orderId}\n👤 *Cliente:* ${clientName}\n📍 *Endereço:* ${addr}\n📞 *Telefone:* ${phone}\n📦 *Pedido:* ${product.name}\n🎨 *Sabor:* ${selectedFlavor}\n\n💳 *Pagamento:* ${pay} (${trocoText})\n💵 *Total:* R$ ${product.price.toFixed(2)}`;
+        const msg = `💨 *NOVO PEDIDO - HUB STORE* 💨\n\n📌 *Ordem:* ${orderId}\n👤 *Cliente:* ${clientName}\n📍 *Endereço:* ${addr}\n📞 *Telefone:* ${phone}\n📦 *Pedido:* ${product.name}\n🎨 *Sabor:* ${selectedFlavor}\n\n💳 *Pagamento:* ${pay} (${trocoText})\n💵 *Total:* R$ ${parseFloat(product.price).toFixed(2)}`;
+        
         closeModal('buy-modal');
         showPremiumToast("Pedido Confirmado!", "Tudo certo! Redirecionando...", "success");
         setTimeout(() => { window.location.href = `https://api.whatsapp.com/send?phone=${HUB_STORE_WHATSAPP}&text=${encodeURIComponent(msg)}`; }, 1500);
-    } catch (err) { showPremiumToast("Erro", "Falha ao processar pedido.", "error"); resetHoldButton(); }
+    } catch (err) { 
+        console.error("Erro na função finalizar pedido:", err);
+        showPremiumToast("Erro", "Falha ao processar pedido.", "error"); 
+        resetHoldButton(); 
+    }
 }
-
 // ====================================================
 // 6. DASHBOARD E FLUXO DE CAIXA
 // ====================================================
